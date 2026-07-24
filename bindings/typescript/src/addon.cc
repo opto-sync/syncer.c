@@ -91,10 +91,6 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
             cbRef.Reset(jOpts.Get("overrideCb").As<Napi::Function>(), 1);
             opts.override_cb = cpp_override_cb;
         }
-    } else if (info.Length() >= 3 && info[2].IsFunction()) {
-        /* Legacy fallback: 3rd arg is directly the callback */
-        cbRef.Reset(info[2].As<Napi::Function>(), 1);
-        opts.override_cb = cpp_override_cb;
     }
 
     Napi::FunctionReference* prev_callback = t_callback;
