@@ -665,6 +665,62 @@ static bool do_merge(
                 continue;
             }
 
+            if (arr_strat == SYNCER_ARRAY_MERGE_BY_KEY) {
+                /* Process one v2 element per outer-loop iteration so matched
+                   pairs can descend as normal object frames. */
+                size_t i = top->arr_idx;
+                if (i >= top->arr_len_v2) {
+                    path_restore(&path, top->path_saved);
+                    stack_pop(&stack);
+                    continue;
+                }
+                top->arr_idx = i + 1;
+
+                yyjson_val* e2 = yyjson_arr_get(arr2, i);
+                const char* ikey = NULL;
+                size_t ikeylen = 0;
+                yyjson_val* ident = ident_key_of(e2, match_keys, &ikey, &ikeylen);
+
+                if (!ident) {
+                    /* Non-object, or object without any identity key: UNION
+                       semantics so repeated syncs of the same payload stay
+                       idempotent instead of duplicating elements. */
+                    if (!array_contains(arr1, e2)) {
+                        yyjson_mut_val* cp = yyjson_val_mut_copy(doc, e2);
+                        yyjson_mut_arr_append(arr1, cp);
+                    }
+                    continue;
+                }
+
+                size_t idx1 = 0;
+                yyjson_mut_val* e1 = find_by_ident(arr1, ikey, ikeylen, ident, &idx1);
+                if (!e1) {
+                    /* New identity: append */
+                    yyjson_mut_val* cp = yyjson_val_mut_copy(doc, e2);
+                    yyjson_mut_arr_append(arr1, cp);
+                    continue;
+                }
+
+                /* Matched pair: per-element timestamp resolution, then deep
+                   merge by pushing an object frame. */
+                if (resolve_ts && should_reject_by_crdt_rules(e1, e2, lww_keys, fww_keys)) {
+                    continue; /* existing element is newer — keep it */
+                }
+                path_restore(&path, top->path_saved);
+                path_push_index(&path, idx1);
+                merge_frame_t* f = stack_push(&stack);
+                if (!f) {
+                    ok = false;
+                    break;
+                }
+                f->kind = FRAME_OBJECT;
+                f->v1 = e1;
+                f->v2 = e2;
+                yyjson_obj_iter_init(e2, &f->obj_iter);
+                f->path_saved = path_save(&path);
+                continue;
+            }
+
             if (arr_strat == SYNCER_ARRAY_MERGE_BY_INDEX) {
                 /* Process one element per outer-loop iteration */
                 size_t i = top->arr_idx;
