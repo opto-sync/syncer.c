@@ -37,10 +37,15 @@ export function performZeroDeserializationMerge<T>(
   rawIncomingJson: string, 
   strategy: BaseMergeStrategy<T>
 ): T {
-  // Call the C core FFI synchronously 
+  // Call the C core FFI synchronously
   // It stays as strings until the very end!
-  const mergedString = mergeJson(rawDbJson, rawIncomingJson, strategy.handleConflict.bind(strategy));
-  
+  const mergedString = mergeJson(rawDbJson, rawIncomingJson, {
+    overrideCb: strategy.toNativeCallback(),
+  });
+  if (mergedString === null) {
+    throw new Error('opto-sync merge failed: input was not valid JSON');
+  }
+
   // Deserialize exactly once
   return JSON.parse(mergedString);
 }
