@@ -80,19 +80,27 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
             opts.fww_keys = fww_keys_storage.c_str();
         }
         if (jOpts.Has("overrideCb") && jOpts.Get("overrideCb").IsFunction()) {
-            g_callback.Reset(jOpts.Get("overrideCb").As<Napi::Function>(), 1);
+            cbRef.Reset(jOpts.Get("overrideCb").As<Napi::Function>(), 1);
             opts.override_cb = cpp_override_cb;
         }
     } else if (info.Length() >= 3 && info[2].IsFunction()) {
         /* Legacy fallback: 3rd arg is directly the callback */
-        g_callback.Reset(info[2].As<Napi::Function>(), 1);
+        cbRef.Reset(info[2].As<Napi::Function>(), 1);
         opts.override_cb = cpp_override_cb;
     }
 
+    Napi::FunctionReference* prev_callback = t_callback;
+    if (opts.override_cb) t_callback = &cbRef;
+
     char* result = syncer_merge_json_ex(j1.c_str(), j2.c_str(), &opts);
 
-    if (opts.override_cb) {
-        g_callback.Reset(); // free the reference
+    t_callback = prev_callback;
+
+    if (t_cb_threw) {
+        t_cb_threw = false;
+        if (result) syncer_free(result);
+        Napi::Error::New(env, t_cb_error_msg).ThrowAsJavaScriptException();
+        return env.Null();
     }
 
     if (!result) {
