@@ -1,5 +1,5 @@
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
-import { mergeJson } from '../../../bindings/typescript/build/Release/syncer.node'; // Assuming built path
+import { mergeJson } from '../../../bindings/typescript';
 import { customType } from 'drizzle-orm/pg-core';
 
 /**
