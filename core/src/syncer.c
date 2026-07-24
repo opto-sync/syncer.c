@@ -350,7 +350,8 @@ static yyjson_mut_val* merge_leaf(
     if (opts && opts->override_cb) {
         char* s1 = yyjson_mut_val_write(v1, 0, NULL);
         char* s2 = yyjson_val_write(v2, 0, NULL);
-        char* res = opts->override_cb(path->buf, s1, s2);
+        /* Never hand the callback NULL serializations. */
+        char* res = (s1 && s2) ? opts->override_cb(path->buf, s1, s2) : NULL;
         free(s1);
         free(s2);
         if (res) {
