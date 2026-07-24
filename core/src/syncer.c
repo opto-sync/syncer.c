@@ -369,7 +369,9 @@ static yyjson_mut_val* merge_leaf(
     return yyjson_val_mut_copy(doc, v2);
 }
 
-static void do_merge(
+/* Returns false when the merge had to abort (allocation failure); the caller
+ * must then discard the partially merged doc and report an error. */
+static bool do_merge(
     yyjson_mut_doc*              doc,
     yyjson_mut_val*              root1,
     yyjson_val*                  root2,
@@ -390,35 +392,49 @@ static void do_merge(
     const char* lww_keys = (opts && opts->lww_keys) ? opts->lww_keys : "updatedAt";
     const char* fww_keys = (opts && opts->fww_keys) ? opts->fww_keys : NULL;
 
+    bool ok = !stack.oom && !path.oom && !visited.oom;
+
     /* Seed: if both roots are objects, push a frame; otherwise leaf-merge at root */
-    if (yyjson_mut_is_obj(root1) && yyjson_is_obj(root2)) {
+    if (ok && yyjson_mut_is_obj(root1) && yyjson_is_obj(root2)) {
         if (resolve_ts && should_reject_by_crdt_rules(root1, root2, lww_keys, fww_keys)) {
-            /* Root v1 is newer; abort merge and keep v1 entirely */
-            if (opts && opts->detect_circular_refs) visited_free(&visited);
-            return;
+            /* Root v1 is newer; keep v1 entirely (not an error) — fall through
+               to the shared cleanup with an empty stack. */
+        } else {
+            if (opts && opts->detect_circular_refs) {
+                visited_add(&visited, root1, root2);
+            }
+            merge_frame_t* f = stack_push(&stack);
+            if (!f) {
+                ok = false;
+            } else {
+                f->kind = FRAME_OBJECT;
+                f->v1 = root1;
+                f->v2 = root2;
+                yyjson_obj_iter_init(root2, &f->obj_iter);
+                f->path_saved = path_save(&path);
+            }
         }
-        if (opts && opts->detect_circular_refs) {
-            visited_add(&visited, root1, root2);
-        }
-        merge_frame_t* f = stack_push(&stack);
-        f->kind = FRAME_OBJECT;
-        f->v1 = root1;
-        f->v2 = root2;
-        yyjson_obj_iter_init(root2, &f->obj_iter);
-        f->path_saved = path_save(&path);
-    } else if (yyjson_mut_is_arr(root1) && yyjson_is_arr(root2)
+    } else if (ok && yyjson_mut_is_arr(root1) && yyjson_is_arr(root2)
                && arr_strat != SYNCER_ARRAY_REPLACE) {
         merge_frame_t* f = stack_push(&stack);
-        f->kind = FRAME_ARRAY;
-        f->v1 = root1;
-        f->v2 = root2;
-        f->arr_idx = 0;
-        f->arr_len_v2 = yyjson_arr_size(root2);
-        f->path_saved = path_save(&path);
+        if (!f) {
+            ok = false;
+        } else {
+            f->kind = FRAME_ARRAY;
+            f->v1 = root1;
+            f->v2 = root2;
+            f->arr_idx = 0;
+            f->arr_len_v2 = yyjson_arr_size(root2);
+            f->path_saved = path_save(&path);
+        }
     }
     /* else: handled after this loop — root itself is a leaf merge */
 
-    while (stack.count > 0) {
+    while (ok && stack.count > 0) {
+        if (path.oom || visited.oom) {
+            ok = false;
+            break;
+        }
         merge_frame_t* top = stack_top(&stack);
 
         if (top->kind == FRAME_OBJECT) {
