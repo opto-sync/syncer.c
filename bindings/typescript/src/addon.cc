@@ -4,13 +4,21 @@
 #include <stdlib.h>
 #include <string>
 
-// Global reference for the JS callback
-Napi::FunctionReference g_callback;
+// Callback state for the CURRENT mergeJson call on THIS thread.
+// thread_local (not a process global) so concurrent merges on different
+// threads (worker_threads) cannot race; the caller saves/restores it so a
+// callback that re-enters mergeJson cannot clobber the outer call's callback.
+thread_local Napi::FunctionReference* t_callback = nullptr;
+// Set when the JS callback throws: the exception must not unwind C++ frames
+// through the C merge engine, so it is captured here and rethrown after the
+// merge returns.
+thread_local bool t_cb_threw = false;
+thread_local std::string t_cb_error_msg;
 
 char* cpp_override_cb(const char* json_path, const char* v1, const char* v2) {
-    if (g_callback.IsEmpty()) return nullptr;
+    if (t_callback == nullptr || t_callback->IsEmpty() || t_cb_threw) return nullptr;
 
-    Napi::Env env = g_callback.Env();
+    Napi::Env env = t_callback->Env();
     Napi::HandleScope scope(env);
 
     napi_value args[3] = {
@@ -19,12 +27,17 @@ char* cpp_override_cb(const char* json_path, const char* v1, const char* v2) {
         Napi::String::New(env, v2)
     };
 
-    Napi::Value res = g_callback.Call({args[0], args[1], args[2]});
-    if (res.IsString()) {
-        std::string str = res.As<Napi::String>().Utf8Value();
-        return strdup(str.c_str());
+    try {
+        Napi::Value res = t_callback->Call({args[0], args[1], args[2]});
+        if (res.IsString()) {
+            std::string str = res.As<Napi::String>().Utf8Value();
+            return strdup(str.c_str());
+        }
+    } catch (const Napi::Error& e) {
+        t_cb_threw = true;
+        t_cb_error_msg = e.Message();
     }
-    
+
     return nullptr;
 }
 
