@@ -716,6 +716,16 @@ int main(void) {
     TEST(test_callback_bad_json_falls_back);
     TEST(test_union_dedups_objects);
     TEST(test_max_depth_one);
+    TEST(test_merge_by_key_basic);
+    TEST(test_merge_by_key_lww_timestamps);
+    TEST(test_merge_by_key_fww_created_at);
+    TEST(test_merge_by_key_id_type_normalization);
+    TEST(test_merge_by_key_custom_match_keys);
+    TEST(test_merge_by_key_idempotent);
+    TEST(test_merge_by_key_nested_deep_merge);
+    TEST(test_merge_by_key_mixed_and_missing_ids);
+    TEST(test_merge_by_key_at_root);
+    TEST(test_version_string);
 
     printf("\n=== Results: %d/%d passed ===\n\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
