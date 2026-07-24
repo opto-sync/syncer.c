@@ -177,12 +177,15 @@ typedef struct {
     merge_frame_t* frames;
     size_t         count;
     size_t         cap;
+    bool           oom;
 } merge_stack_t;
 
 static void stack_init(merge_stack_t* s) {
     s->cap = 64;
     s->count = 0;
     s->frames = (merge_frame_t*)malloc(s->cap * sizeof(merge_frame_t));
+    s->oom = (s->frames == NULL);
+    if (s->oom) s->cap = 0;
 }
 
 static void stack_free(merge_stack_t* s) {
@@ -191,10 +194,18 @@ static void stack_free(merge_stack_t* s) {
     s->count = s->cap = 0;
 }
 
+/* Returns NULL on allocation failure (s->oom set); callers must abort. */
 static merge_frame_t* stack_push(merge_stack_t* s) {
+    if (s->oom) return NULL;
     if (s->count == s->cap) {
-        s->cap *= 2;
-        s->frames = (merge_frame_t*)realloc(s->frames, s->cap * sizeof(merge_frame_t));
+        size_t cap = s->cap * 2;
+        merge_frame_t* grown = (merge_frame_t*)realloc(s->frames, cap * sizeof(merge_frame_t));
+        if (!grown) {
+            s->oom = true;
+            return NULL;
+        }
+        s->frames = grown;
+        s->cap = cap;
     }
     return &s->frames[s->count++];
 }
