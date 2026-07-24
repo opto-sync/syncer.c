@@ -1,5 +1,10 @@
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
-import { mergeJson } from '../../../bindings/typescript/build/Release/syncer.node';
+import { mergeJson } from '../../../bindings/typescript';
+
+/* Column names are interpolated as SQL identifiers (they cannot be bound as
+   parameters), so they must be plain identifiers — anything else is rejected
+   before it reaches the query builder. */
+const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * A TypeORM ValueTransformer for JSONB columns.
