@@ -243,42 +243,82 @@ static bool array_contains(yyjson_mut_val* arr, yyjson_val* needle) {
 /*  CRDT Timestamp Resolution                                                 */
 /* ========================================================================== */
 
+/* True if s[0..len) is a non-empty run of ASCII digits. */
+static bool ts_all_digits(const char* s, size_t len) {
+    if (len == 0) return false;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] < '0' || s[i] > '9') return false;
+    }
+    return true;
+}
+
+/* Compare two timestamp strings. Pure-digit strings (epoch seconds/ms/ns)
+ * compare by numeric magnitude even when their lengths differ — plain strcmp
+ * would rank "9" above "10". Everything else (e.g. fixed-width ISO-8601)
+ * falls back to lexicographic order, which matches chronological order for
+ * such formats. */
+static int ts_compare(const char* s1, const char* s2) {
+    size_t l1 = strlen(s1), l2 = strlen(s2);
+    if (ts_all_digits(s1, l1) && ts_all_digits(s2, l2)) {
+        while (l1 > 1 && *s1 == '0') { s1++; l1--; }
+        while (l2 > 1 && *s2 == '0') { s2++; l2--; }
+        if (l1 != l2) return l1 < l2 ? -1 : 1;
+        return strncmp(s1, s2, l1);
+    }
+    return strcmp(s1, s2);
+}
+
 static bool check_crdt_keys(yyjson_mut_val* v1, yyjson_val* v2, const char* keys_str, bool is_fww) {
     if (!keys_str || !v1 || !v2) return false;
-    
-    char buffer[256];
-    strncpy(buffer, keys_str, sizeof(buffer)-1);
-    buffer[sizeof(buffer)-1] = '\0';
 
-    char* saveptr;
-    /* strtok_r is POSIX, but on Windows we'd need strtok_s. 
-       To be safely cross-platform without pulling in extras, we'll write a simple tokenizer */
-    char* start = buffer;
-    while (*start) {
-        char* end = strchr(start, ',');
-        if (end) *end = '\0';
+    /* Walk the comma-separated key list in place — no fixed-size copy (a list
+       longer than an internal buffer must not silently stop resolving). */
+    const char* seg = keys_str;
+    for (;;) {
+        const char* end = strchr(seg, ',');
+        size_t len = end ? (size_t)(end - seg) : strlen(seg);
 
-        yyjson_mut_val* t1 = yyjson_mut_obj_get(v1, start);
-        yyjson_val* t2 = yyjson_obj_get(v2, start);
+        /* Trim surrounding spaces so "updatedAt, syncedAt" works. */
+        while (len > 0 && *seg == ' ') { seg++; len--; }
+        while (len > 0 && seg[len - 1] == ' ') len--;
 
-        if (t1 && t2) {
-            if (yyjson_mut_is_int(t1) && yyjson_is_int(t2)) {
-                int64_t i1 = yyjson_mut_get_sint(t1);
-                int64_t i2 = yyjson_get_sint(t2);
-                /* FWW: reject if v2 is newer (i2 > i1). LWW: reject if v1 is newer (i1 > i2) */
-                if (is_fww ? (i2 > i1) : (i1 > i2)) return true;
-            } else {
-                const char* s1 = yyjson_mut_get_str(t1);
-                const char* s2 = yyjson_get_str(t2);
-                if (s1 && s2) {
-                    int cmp = strcmp(s1, s2);
-                    /* FWW: reject if v2 is newer (s1 < s2 -> cmp < 0). LWW: reject if v1 is newer (cmp > 0) */
-                    if (is_fww ? (cmp < 0) : (cmp > 0)) return true;
+        if (len > 0) {
+            yyjson_mut_val* t1 = yyjson_mut_obj_getn(v1, seg, len);
+            yyjson_val*     t2 = yyjson_obj_getn(v2, seg, len);
+            if (t1 && t2) {
+                int  cmp = 0;
+                bool comparable = false;
+                if (yyjson_mut_is_int(t1) && yyjson_is_int(t2)) {
+                    int64_t i1 = yyjson_mut_get_sint(t1);
+                    int64_t i2 = yyjson_get_sint(t2);
+                    cmp = (i1 > i2) - (i1 < i2);
+                    comparable = true;
+                } else {
+                    /* Normalize int-vs-string pairs so a writer switching the
+                       field between number and string cannot bypass
+                       resolution. */
+                    char b1[24], b2[24];
+                    const char* s1 = yyjson_mut_get_str(t1);
+                    const char* s2 = yyjson_get_str(t2);
+                    if (!s1 && yyjson_mut_is_int(t1)) {
+                        snprintf(b1, sizeof(b1), "%lld", (long long)yyjson_mut_get_sint(t1));
+                        s1 = b1;
+                    }
+                    if (!s2 && yyjson_is_int(t2)) {
+                        snprintf(b2, sizeof(b2), "%lld", (long long)yyjson_get_sint(t2));
+                        s2 = b2;
+                    }
+                    if (s1 && s2) {
+                        cmp = ts_compare(s1, s2);
+                        comparable = true;
+                    }
                 }
+                /* FWW: reject when incoming is newer. LWW: reject when existing is newer. */
+                if (comparable && (is_fww ? (cmp < 0) : (cmp > 0))) return true;
             }
         }
         if (!end) break;
-        start = end + 1;
+        seg = end + 1;
     }
     return false;
 }
