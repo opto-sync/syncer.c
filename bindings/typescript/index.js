@@ -18,7 +18,8 @@ try {
  * @param {string} incomingJson The incoming JSON string to merge on top
  * @param {object} [options] Merge behavior configuration
  * @param {boolean} [options.resolveByTimestamp] Enable CRDT timestamp resolution
- * @param {string} [options.timestampKey] Key to use for timestamp comparison (default: "updatedAt")
+ * @param {string} [options.lwwKeys] Comma-separated keys for Last-Write-Wins (default: "updatedAt,syncedAt")
+ * @param {string} [options.fwwKeys] Comma-separated keys for First-Write-Wins (default: "createdAt")
  * @returns {string|null} The deeply merged JSON string, or null on parse error
  */
 function mergeJson(baseJson, incomingJson, options) {

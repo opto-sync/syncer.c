@@ -23,7 +23,8 @@ pub struct SyncerMergeOptionsC {
     pub max_depth: u32,
     pub detect_circular_refs: bool,
     pub resolve_by_timestamp: bool,
-    pub timestamp_key: *const c_char,
+    pub lww_keys: *const c_char,
+    pub fww_keys: *const c_char,
 }
 
 #[derive(Default)]
@@ -32,7 +33,8 @@ pub struct MergeOptions {
     pub max_depth: Option<u32>,
     pub detect_circular_refs: bool,
     pub resolve_by_timestamp: bool,
-    pub timestamp_key: Option<String>,
+    pub lww_keys: Option<String>,
+    pub fww_keys: Option<String>,
 }
 
 extern "C" {
@@ -59,7 +61,8 @@ pub fn merge_json_with_options(json1: &str, json2: &str, opts: &MergeOptions) ->
     let c_json1 = CString::new(json1).unwrap();
     let c_json2 = CString::new(json2).unwrap();
     
-    let ts_key_cstr = opts.timestamp_key.as_ref().map(|s| CString::new(s.as_str()).unwrap());
+    let lww_keys_cstr = opts.lww_keys.as_ref().map(|s| CString::new(s.as_str()).unwrap());
+    let fww_keys_cstr = opts.fww_keys.as_ref().map(|s| CString::new(s.as_str()).unwrap());
     
     let c_opts = SyncerMergeOptionsC {
         override_cb: None,
@@ -67,7 +70,8 @@ pub fn merge_json_with_options(json1: &str, json2: &str, opts: &MergeOptions) ->
         max_depth: opts.max_depth.unwrap_or(0),
         detect_circular_refs: opts.detect_circular_refs,
         resolve_by_timestamp: opts.resolve_by_timestamp,
-        timestamp_key: ts_key_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+        lww_keys: lww_keys_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+        fww_keys: fww_keys_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
     };
 
     unsafe {

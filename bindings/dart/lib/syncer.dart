@@ -24,7 +24,8 @@ final class SyncerMergeOptionsC extends Struct {
   external bool detect_circular_refs;
   @Bool()
   external bool resolve_by_timestamp;
-  external Pointer<Utf8> timestamp_key;
+  external Pointer<Utf8> lww_keys;
+  external Pointer<Utf8> fww_keys;
 }
 
 typedef SyncerMergeJsonExC = Pointer<Utf8> Function(Pointer<Utf8> j1, Pointer<Utf8> j2, Pointer<SyncerMergeOptionsC> opts);
@@ -38,7 +39,8 @@ class MergeOptions {
   int maxDepth;
   bool detectCircularRefs;
   bool resolveByTimestamp;
-  String? timestampKey;
+  String? lwwKeys;
+  String? fwwKeys;
   Pointer<NativeFunction<MergeOverrideCbC>>? overrideCb;
 
   MergeOptions({
@@ -46,7 +48,8 @@ class MergeOptions {
     this.maxDepth = 0,
     this.detectCircularRefs = false,
     this.resolveByTimestamp = false,
-    this.timestampKey,
+    this.lwwKeys,
+    this.fwwKeys,
     this.overrideCb,
   });
 }
@@ -74,17 +77,27 @@ class Syncer {
     cOpts.ref.detect_circular_refs = opts.detectCircularRefs;
     cOpts.ref.resolve_by_timestamp = opts.resolveByTimestamp;
     
-    Pointer<Utf8> cTsKey = nullptr;
-    if (opts.timestampKey != null) {
-      cTsKey = opts.timestampKey!.toNativeUtf8();
-      cOpts.ref.timestamp_key = cTsKey;
+    Pointer<Utf8> cLwwKeys = nullptr;
+    Pointer<Utf8> cFwwKeys = nullptr;
+
+    if (opts.lwwKeys != null) {
+      cLwwKeys = opts.lwwKeys!.toNativeUtf8();
+      cOpts.ref.lww_keys = cLwwKeys;
     } else {
-      cOpts.ref.timestamp_key = nullptr;
+      cOpts.ref.lww_keys = nullptr;
+    }
+
+    if (opts.fwwKeys != null) {
+      cFwwKeys = opts.fwwKeys!.toNativeUtf8();
+      cOpts.ref.fww_keys = cFwwKeys;
+    } else {
+      cOpts.ref.fww_keys = nullptr;
     }
 
     final resultPtr = _mergeJsonEx(cj1, cj2, cOpts);
 
-    if (cTsKey != nullptr) malloc.free(cTsKey);
+    if (cLwwKeys != nullptr) malloc.free(cLwwKeys);
+    if (cFwwKeys != nullptr) malloc.free(cFwwKeys);
     malloc.free(cOpts);
     malloc.free(cj1);
     malloc.free(cj2);

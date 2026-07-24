@@ -46,7 +46,8 @@ typedef struct {
     uint32_t                    max_depth;      /* 0 = unlimited */
     bool                        detect_circular_refs;
     bool                        resolve_by_timestamp; /* Enable CRDT-like timestamp resolution */
-    const char*                 timestamp_key;        /* e.g., "updatedAt", "syncedAt" (if NULL, defaults to "updatedAt") */
+    const char*                 lww_keys;             /* Comma-separated keys for Last-Write-Wins (e.g., "updatedAt,syncedAt") */
+    const char*                 fww_keys;             /* Comma-separated keys for First-Write-Wins (e.g., "createdAt") */
 } syncer_merge_options_t;
 
 /**
@@ -59,7 +60,8 @@ static inline syncer_merge_options_t syncer_default_options(void) {
     opts.max_depth = 0;
     opts.detect_circular_refs = false;
     opts.resolve_by_timestamp = false;
-    opts.timestamp_key = NULL;
+    opts.lww_keys = NULL;
+    opts.fww_keys = NULL;
     return opts;
 }
 

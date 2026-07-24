@@ -10,7 +10,8 @@ export interface MergeOptions {
   maxDepth?: number;
   detectCircularRefs?: boolean;
   resolveByTimestamp?: boolean;
-  timestampKey?: string;
+  lwwKeys?: string;
+  fwwKeys?: string;
   overrideCb?: (jsonPath: string, v1: string, v2: string) => string | undefined | null;
 }
 

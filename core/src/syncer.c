@@ -21,18 +21,30 @@
 /*  Path builder                                                              */
 /* ========================================================================== */
 
+/* All growable helpers below carry an `oom` flag instead of assuming malloc/
+ * realloc succeed. On allocation failure they keep their last valid state,
+ * flag oom, and the merge aborts cleanly (caller returns NULL) rather than
+ * dereferencing NULL or losing the old buffer. */
+
 typedef struct {
     char*  buf;
     size_t len;
     size_t cap;
+    bool   oom;
 } path_buf_t;
 
 static void path_init(path_buf_t* p) {
     p->cap = 256;
     p->buf = (char*)malloc(p->cap);
+    p->len = 1;
+    p->oom = (p->buf == NULL);
+    if (p->oom) {
+        p->cap = 0;
+        p->len = 0;
+        return;
+    }
     p->buf[0] = '$';
     p->buf[1] = '\0';
-    p->len = 1;
 }
 
 static void path_free(path_buf_t* p) {
@@ -42,15 +54,24 @@ static void path_free(path_buf_t* p) {
 }
 
 static void path_ensure(path_buf_t* p, size_t extra) {
-    while (p->len + extra + 1 > p->cap) {
-        p->cap *= 2;
-        p->buf = (char*)realloc(p->buf, p->cap);
+    if (p->oom) return;
+    size_t cap = p->cap;
+    while (p->len + extra + 1 > cap) cap *= 2;
+    if (cap != p->cap) {
+        char* grown = (char*)realloc(p->buf, cap);
+        if (!grown) {
+            p->oom = true; /* old buf stays valid; freed in path_free */
+            return;
+        }
+        p->buf = grown;
+        p->cap = cap;
     }
 }
 
 static size_t path_save(const path_buf_t* p) { return p->len; }
 
 static void path_restore(path_buf_t* p, size_t saved) {
+    if (p->oom) return;
     p->len = saved;
     p->buf[p->len] = '\0';
 }
@@ -58,6 +79,7 @@ static void path_restore(path_buf_t* p, size_t saved) {
 static void path_push_key(path_buf_t* p, const char* key) {
     size_t klen = strlen(key);
     path_ensure(p, klen + 1);
+    if (p->oom) return;
     p->buf[p->len++] = '.';
     memcpy(p->buf + p->len, key, klen);
     p->len += klen;
@@ -68,6 +90,7 @@ static void path_push_index(path_buf_t* p, size_t idx) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "[%zu]", idx);
     path_ensure(p, (size_t)n);
+    if (p->oom) return;
     memcpy(p->buf + p->len, tmp, (size_t)n);
     p->len += (size_t)n;
     p->buf[p->len] = '\0';
@@ -199,29 +222,55 @@ static bool array_contains(yyjson_mut_val* arr, yyjson_val* needle) {
 /*  CRDT Timestamp Resolution                                                 */
 /* ========================================================================== */
 
-static bool should_reject_by_timestamp(yyjson_mut_val* v1, yyjson_val* v2, const char* ts_key) {
+static bool check_crdt_keys(yyjson_mut_val* v1, yyjson_val* v2, const char* keys_str, bool is_fww) {
+    if (!keys_str || !v1 || !v2) return false;
+    
+    char buffer[256];
+    strncpy(buffer, keys_str, sizeof(buffer)-1);
+    buffer[sizeof(buffer)-1] = '\0';
+
+    char* saveptr;
+    /* strtok_r is POSIX, but on Windows we'd need strtok_s. 
+       To be safely cross-platform without pulling in extras, we'll write a simple tokenizer */
+    char* start = buffer;
+    while (*start) {
+        char* end = strchr(start, ',');
+        if (end) *end = '\0';
+
+        yyjson_mut_val* t1 = yyjson_mut_obj_get(v1, start);
+        yyjson_val* t2 = yyjson_obj_get(v2, start);
+
+        if (t1 && t2) {
+            if (yyjson_mut_is_int(t1) && yyjson_is_int(t2)) {
+                int64_t i1 = yyjson_mut_get_sint(t1);
+                int64_t i2 = yyjson_get_sint(t2);
+                /* FWW: reject if v2 is newer (i2 > i1). LWW: reject if v1 is newer (i1 > i2) */
+                if (is_fww ? (i2 > i1) : (i1 > i2)) return true;
+            } else {
+                const char* s1 = yyjson_mut_get_str(t1);
+                const char* s2 = yyjson_get_str(t2);
+                if (s1 && s2) {
+                    int cmp = strcmp(s1, s2);
+                    /* FWW: reject if v2 is newer (s1 < s2 -> cmp < 0). LWW: reject if v1 is newer (cmp > 0) */
+                    if (is_fww ? (cmp < 0) : (cmp > 0)) return true;
+                }
+            }
+        }
+        if (!end) break;
+        start = end + 1;
+    }
+    return false;
+}
+
+static bool should_reject_by_crdt_rules(yyjson_mut_val* v1, yyjson_val* v2, const char* lww_keys, const char* fww_keys) {
     if (!v1 || !v2 || !yyjson_mut_is_obj(v1) || !yyjson_is_obj(v2)) return false;
 
-    yyjson_mut_val* t1 = yyjson_mut_obj_get(v1, ts_key);
-    yyjson_val* t2 = yyjson_obj_get(v2, ts_key);
+    /* If FWW condition is met (incoming is newer), we reject it */
+    if (check_crdt_keys(v1, v2, fww_keys, true)) return true;
+    
+    /* If LWW condition is met (existing is newer), we reject it */
+    if (check_crdt_keys(v1, v2, lww_keys, false)) return true;
 
-    if (!t1 || !t2) return false;
-
-    /* Check if they are 64-bit integers (e.g., nanosecond epochs) */
-    if (yyjson_mut_is_int(t1) && yyjson_is_int(t2)) {
-        int64_t i1 = yyjson_mut_get_sint(t1);
-        int64_t i2 = yyjson_get_sint(t2);
-        return i1 > i2;
-    }
-
-    /* Fallback to string comparison (works for ISO-8601 or stringified ints) */
-    const char* s1 = yyjson_mut_get_str(t1);
-    const char* s2 = yyjson_get_str(t2);
-    if (s1 && s2) {
-        return strcmp(s1, s2) > 0;
-    }
-
-    /* Different types or unsupported type -> don't reject */
     return false;
 }
 
@@ -276,11 +325,12 @@ static void do_merge(
     syncer_array_strategy_t arr_strat = opts ? opts->array_strategy : SYNCER_ARRAY_REPLACE;
     uint32_t max_depth = opts ? opts->max_depth : 0;
     bool resolve_ts = opts ? opts->resolve_by_timestamp : false;
-    const char* ts_key = (opts && opts->timestamp_key) ? opts->timestamp_key : "updatedAt";
+    const char* lww_keys = (opts && opts->lww_keys) ? opts->lww_keys : "updatedAt";
+    const char* fww_keys = (opts && opts->fww_keys) ? opts->fww_keys : NULL;
 
     /* Seed: if both roots are objects, push a frame; otherwise leaf-merge at root */
     if (yyjson_mut_is_obj(root1) && yyjson_is_obj(root2)) {
-        if (resolve_ts && should_reject_by_timestamp(root1, root2, ts_key)) {
+        if (resolve_ts && should_reject_by_crdt_rules(root1, root2, lww_keys, fww_keys)) {
             /* Root v1 is newer; abort merge and keep v1 entirely */
             if (opts && opts->detect_circular_refs) visited_free(&visited);
             return;
@@ -354,7 +404,7 @@ static void do_merge(
 
             /* Both objects: push a new frame */
             if (yyjson_mut_is_obj(val1) && yyjson_is_obj(val2)) {
-                if (resolve_ts && should_reject_by_timestamp(val1, val2, ts_key)) {
+                if (resolve_ts && should_reject_by_crdt_rules(val1, val2, lww_keys, fww_keys)) {
                     /* v1 is newer -> keep v1, don't descend or overwrite */
                     path_restore(&path, saved);
                     continue;
@@ -465,7 +515,7 @@ static void do_merge(
                     path_push_index(&path, i);
 
                     if (yyjson_mut_is_obj(e1) && yyjson_is_obj(e2)) {
-                        if (resolve_ts && should_reject_by_timestamp(e1, e2, ts_key)) {
+                        if (resolve_ts && should_reject_by_crdt_rules(e1, e2, lww_keys, fww_keys)) {
                             /* v1 is newer -> keep v1 as-is */
                         } else {
                             /* Push a child object frame — the outer while loop

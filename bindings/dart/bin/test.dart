@@ -19,6 +19,6 @@ void main() {
   final cb = Pointer.fromFunction<MergeOverrideCbC>(dartOverrideCb);
 
   print('Testing Dart FFI Binding to syncer.c:');
-  final res = syncer.merge(j1, j2, cb);
+  final res = syncer.merge(j1, j2, options: MergeOptions(overrideCb: cb));
   print('Merged: $res');
 }

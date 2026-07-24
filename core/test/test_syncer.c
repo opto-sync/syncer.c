@@ -276,7 +276,7 @@ static void test_circular_ref_detection(void) {
 static void test_crdt_timestamp_resolution(void) {
     syncer_merge_options_t opts = syncer_default_options();
     opts.resolve_by_timestamp = true;
-    opts.timestamp_key = "updatedAt";
+    opts.lww_keys = "updatedAt";
 
     /* Case 1: Base is newer (Integer nanoseconds). Incoming should be dropped. */
     const char* j1 = "{\"doc\":{\"updatedAt\":1689940800,\"val\":\"base\"}}";
@@ -302,6 +302,23 @@ static void test_crdt_timestamp_resolution(void) {
     assert(r3 != NULL);
     assert(json_has_num(r3, "v", 1)); /* kept base element */
     syncer_free(r3);
+
+    /* Case 4: First-Write-Wins (createdAt). Base is older, incoming is newer. Incoming should be dropped. */
+    opts.fww_keys = "createdAt";
+    const char* j7 = "{\"doc\":{\"createdAt\":100,\"val\":\"original\"}}";
+    const char* j8 = "{\"doc\":{\"createdAt\":200,\"val\":\"new\"}}";
+    char* r4 = syncer_merge_json_ex(j7, j8, &opts);
+    assert(r4 != NULL);
+    assert(json_has_str(r4, "val", "original")); /* kept original */
+    syncer_free(r4);
+
+    /* Case 5: First-Write-Wins (createdAt). Base is newer, incoming is older. Incoming should be accepted. */
+    const char* j9 = "{\"doc\":{\"createdAt\":500,\"val\":\"wrong\"}}";
+    const char* j10 = "{\"doc\":{\"createdAt\":100,\"val\":\"correct\"}}";
+    char* r5 = syncer_merge_json_ex(j9, j10, &opts);
+    assert(r5 != NULL);
+    assert(json_has_str(r5, "val", "correct")); /* took incoming */
+    syncer_free(r5);
 }
 
 /* ========================================================================== */

@@ -40,7 +40,8 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     std::string j2 = info[1].As<Napi::String>().Utf8Value();
 
     syncer_merge_options_t opts = syncer_default_options();
-    std::string ts_key_storage; /* to keep the string alive if we copy it */
+    std::string lww_keys_storage; /* to keep the string alive if we copy it */
+    std::string fww_keys_storage;
 
     if (info.Length() >= 3 && info[2].IsObject()) {
         Napi::Object jOpts = info[2].As<Napi::Object>();
@@ -57,9 +58,13 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
         if (jOpts.Has("resolveByTimestamp") && jOpts.Get("resolveByTimestamp").IsBoolean()) {
             opts.resolve_by_timestamp = jOpts.Get("resolveByTimestamp").As<Napi::Boolean>().Value();
         }
-        if (jOpts.Has("timestampKey") && jOpts.Get("timestampKey").IsString()) {
-            ts_key_storage = jOpts.Get("timestampKey").As<Napi::String>().Utf8Value();
-            opts.timestamp_key = ts_key_storage.c_str();
+        if (jOpts.Has("lwwKeys") && jOpts.Get("lwwKeys").IsString()) {
+            lww_keys_storage = jOpts.Get("lwwKeys").As<Napi::String>().Utf8Value();
+            opts.lww_keys = lww_keys_storage.c_str();
+        }
+        if (jOpts.Has("fwwKeys") && jOpts.Get("fwwKeys").IsString()) {
+            fww_keys_storage = jOpts.Get("fwwKeys").As<Napi::String>().Utf8Value();
+            opts.fww_keys = fww_keys_storage.c_str();
         }
         if (jOpts.Has("overrideCb") && jOpts.Get("overrideCb").IsFunction()) {
             g_callback.Reset(jOpts.Get("overrideCb").As<Napi::Function>(), 1);
