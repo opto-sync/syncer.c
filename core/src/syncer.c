@@ -109,12 +109,15 @@ typedef struct {
     visited_pair_t* items;
     size_t          count;
     size_t          cap;
+    bool            oom;
 } visited_set_t;
 
 static void visited_init(visited_set_t* v) {
     v->cap   = 64;
     v->count = 0;
     v->items = (visited_pair_t*)malloc(v->cap * sizeof(visited_pair_t));
+    v->oom   = (v->items == NULL);
+    if (v->oom) v->cap = 0;
 }
 
 static void visited_free(visited_set_t* v) {
