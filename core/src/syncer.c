@@ -905,3 +905,7 @@ char* syncer_merge_json(const char* json1,
 void syncer_free(void* ptr) {
     if (ptr) free(ptr);
 }
+
+const char* syncer_version(void) {
+    return "0.2.0";
+}
