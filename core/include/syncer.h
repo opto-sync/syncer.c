@@ -104,6 +104,13 @@ char* syncer_merge_json(const char* json1,
  */
 void syncer_free(void* ptr);
 
+/**
+ * Library version as "major.minor.patch". Static string — do not free.
+ * Lets bindings verify at load time that the shared library they found
+ * supports the API surface they were compiled against.
+ */
+const char* syncer_version(void);
+
 #ifdef __cplusplus
 }
 #endif
