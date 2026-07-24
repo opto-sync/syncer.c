@@ -70,6 +70,7 @@ static inline syncer_merge_options_t syncer_default_options(void) {
     opts.resolve_by_timestamp = false;
     opts.lww_keys = NULL;
     opts.fww_keys = NULL;
+    opts.array_match_keys = NULL;
     return opts;
 }
 
