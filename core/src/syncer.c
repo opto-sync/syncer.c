@@ -662,15 +662,15 @@ char* syncer_merge_json_ex(const char* json1,
 {
     if (!json1 && !json2) return NULL;
 
-    if (!json1) {
-        char* dup = (char*)malloc(strlen(json2) + 1);
-        if (dup) strcpy(dup, json2);
-        return dup;
-    }
-    if (!json2) {
-        char* dup = (char*)malloc(strlen(json1) + 1);
-        if (dup) strcpy(dup, json1);
-        return dup;
+    /* One-sided merge: still parse the present side, so invalid JSON returns
+       NULL (per the API contract) instead of being echoed back verbatim. */
+    if (!json1 || !json2) {
+        const char* only = json1 ? json1 : json2;
+        yyjson_doc* d = yyjson_read(only, strlen(only), 0);
+        if (!d) return NULL;
+        char* out = yyjson_write(d, 0, NULL);
+        yyjson_doc_free(d);
+        return out;
     }
 
     yyjson_doc* doc1 = yyjson_read(json1, strlen(json1), 0);
@@ -683,6 +683,11 @@ char* syncer_merge_json_ex(const char* json1,
     }
 
     yyjson_mut_doc* mut_doc = yyjson_doc_mut_copy(doc1, NULL);
+    if (!mut_doc) {
+        yyjson_doc_free(doc1);
+        yyjson_doc_free(doc2);
+        return NULL;
+    }
     yyjson_mut_val* root1 = yyjson_mut_doc_get_root(mut_doc);
     yyjson_val*     root2 = yyjson_doc_get_root(doc2);
 
@@ -691,18 +696,24 @@ char* syncer_merge_json_ex(const char* json1,
     bool both_arr = yyjson_mut_is_arr(root1) && yyjson_is_arr(root2);
     syncer_array_strategy_t strat = opts ? opts->array_strategy : SYNCER_ARRAY_REPLACE;
 
+    bool merged_ok = true;
     if (both_obj || (both_arr && strat != SYNCER_ARRAY_REPLACE)) {
-        do_merge(mut_doc, root1, root2, opts);
+        merged_ok = do_merge(mut_doc, root1, root2, opts);
     } else {
         /* Root-level leaf merge or array-replace at root */
         path_buf_t p;
         path_init(&p);
-        yyjson_mut_val* merged = merge_leaf(mut_doc, &p, root1, root2, opts);
-        yyjson_mut_doc_set_root(mut_doc, merged);
+        if (p.oom) {
+            merged_ok = false;
+        } else {
+            yyjson_mut_val* merged = merge_leaf(mut_doc, &p, root1, root2, opts);
+            if (merged) yyjson_mut_doc_set_root(mut_doc, merged);
+            else merged_ok = false;
+        }
         path_free(&p);
     }
 
-    char* result = yyjson_mut_write(mut_doc, 0, NULL);
+    char* result = merged_ok ? yyjson_mut_write(mut_doc, 0, NULL) : NULL;
 
     yyjson_mut_doc_free(mut_doc);
     yyjson_doc_free(doc1);
