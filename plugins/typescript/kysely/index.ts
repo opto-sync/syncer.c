@@ -26,7 +26,12 @@ export async function kyselySyncJsonb<DB, TableName extends keyof DB, T>(
   const currentRawJson = rawQuery ? rawQuery.raw_json : '{}';
 
   // 2. Merge via C FFI
-  const mergedString = mergeJson(currentRawJson, incomingRawJson, strategy.handleConflict.bind(strategy));
+  const mergedString = mergeJson(currentRawJson, incomingRawJson, {
+    overrideCb: strategy.toNativeCallback(),
+  });
+  if (mergedString === null) {
+    throw new Error('opto-sync merge failed: input was not valid JSON');
+  }
 
   // 3. Save raw string directly back as JSONB
   await db
