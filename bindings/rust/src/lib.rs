@@ -57,13 +57,28 @@ pub fn merge_json(json1: &str, json2: &str) -> String {
     merge_json_with_options(json1, json2, &MergeOptions::default())
 }
 
-pub fn merge_json_with_options(json1: &str, json2: &str, opts: &MergeOptions) -> String {
-    let c_json1 = CString::new(json1).unwrap();
-    let c_json2 = CString::new(json2).unwrap();
-    
-    let lww_keys_cstr = opts.lww_keys.as_ref().map(|s| CString::new(s.as_str()).unwrap());
-    let fww_keys_cstr = opts.fww_keys.as_ref().map(|s| CString::new(s.as_str()).unwrap());
-    
+/// Like [`merge_json_with_options`], but distinguishes failure (`None`) from
+/// success instead of collapsing errors into an empty string. Fails when an
+/// input contains an interior NUL byte or is not valid JSON.
+pub fn try_merge_json_with_options(
+    json1: &str,
+    json2: &str,
+    opts: &MergeOptions,
+) -> Option<String> {
+    // ok()? instead of unwrap(): an interior NUL in caller data must surface
+    // as a failed merge, not a panic across the FFI wrapper.
+    let c_json1 = CString::new(json1).ok()?;
+    let c_json2 = CString::new(json2).ok()?;
+
+    let lww_keys_cstr = match opts.lww_keys.as_ref() {
+        Some(s) => Some(CString::new(s.as_str()).ok()?),
+        None => None,
+    };
+    let fww_keys_cstr = match opts.fww_keys.as_ref() {
+        Some(s) => Some(CString::new(s.as_str()).ok()?),
+        None => None,
+    };
+
     let c_opts = SyncerMergeOptionsC {
         override_cb: None,
         array_strategy: opts.array_strategy.as_ref().copied().unwrap_or(ArrayMergeStrategy::Replace),
@@ -77,12 +92,16 @@ pub fn merge_json_with_options(json1: &str, json2: &str, opts: &MergeOptions) ->
     unsafe {
         let ptr = syncer_merge_json_ex(c_json1.as_ptr(), c_json2.as_ptr(), &c_opts);
         if ptr.is_null() {
-            return String::new();
+            return None;
         }
         let res = CStr::from_ptr(ptr).to_string_lossy().into_owned();
         syncer_free(ptr as *mut c_void);
-        res
+        Some(res)
     }
+}
+
+pub fn merge_json_with_options(json1: &str, json2: &str, opts: &MergeOptions) -> String {
+    try_merge_json_with_options(json1, json2, opts).unwrap_or_default()
 }
 
 #[cfg(test)]
