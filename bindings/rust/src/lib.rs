@@ -126,8 +126,42 @@ mod tests {
         let j2 = r#"{"doc": {"updatedAt": 50, "v": 2}}"#;
         let mut opts = MergeOptions::default();
         opts.resolve_by_timestamp = true;
-        
+
         let res = merge_json_with_options(j1, j2, &opts);
         assert!(res.contains("\"v\":1")); // Kept v1 because 100 > 50
+    }
+
+    #[test]
+    fn test_interior_nul_does_not_panic() {
+        let j2 = "{\"b\":\"x\u{0}y\"}"; // interior NUL byte in caller data
+        assert_eq!(merge_json("{\"a\":1}", j2), "");
+        assert_eq!(
+            try_merge_json_with_options("{\"a\":1}", j2, &MergeOptions::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn test_invalid_json_is_none() {
+        assert_eq!(
+            try_merge_json_with_options("{oops", "{}", &MergeOptions::default()),
+            None
+        );
+        assert_eq!(merge_json("{oops", "{}"), "");
+    }
+
+    #[test]
+    fn test_crdt_numeric_string_timestamps() {
+        // Regression: strcmp would rank "9" above "10" and adopt the stale write.
+        let j1 = r#"{"updatedAt":"10","val":"base"}"#;
+        let j2 = r#"{"updatedAt":"9","val":"stale"}"#;
+        let mut opts = MergeOptions::default();
+        opts.resolve_by_timestamp = true;
+        opts.lww_keys = Some("updatedAt".to_string());
+        let res = merge_json_with_options(j1, j2, &opts);
+        assert!(
+            res.contains("\"val\":\"base\""),
+            "older \"9\" must not beat \"10\": {res}"
+        );
     }
 }
