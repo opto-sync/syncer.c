@@ -897,7 +897,9 @@ char* syncer_merge_json(const char* json1,
         s_legacy_cb = cb;
         syncer_merge_options_t opts = syncer_default_options();
         opts.override_cb = legacy_cb_adapter;
-        return syncer_merge_json_ex(json1, json2, &opts);
+        char* out = syncer_merge_json_ex(json1, json2, &opts);
+        s_legacy_cb = NULL; /* never leave a stale cb visible to later calls */
+        return out;
     }
     return syncer_merge_json_ex(json1, json2, NULL);
 }
