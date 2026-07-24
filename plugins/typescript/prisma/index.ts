@@ -25,8 +25,13 @@ export function withSyncer(modelName: string, fieldName: string, strategy: BaseM
           const currentRawJson = JSON.stringify(record[fieldName]); // fallback if Prisma deserialized it
           
           // 2. Perform native C merge
-          const mergedRaw = mergeJson(currentRawJson, incomingRawJson, strategy.handleConflict.bind(strategy));
-          
+          const mergedRaw = mergeJson(currentRawJson, incomingRawJson, {
+            overrideCb: strategy.toNativeCallback(),
+          });
+          if (mergedRaw === null) {
+            throw new Error('opto-sync merge failed: input was not valid JSON');
+          }
+
           // 3. Save back to DB
           return (context as any).update({
             where,
