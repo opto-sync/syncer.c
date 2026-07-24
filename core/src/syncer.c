@@ -611,6 +611,10 @@ static bool do_merge(
                                will process it, and when it pops, we'll come back
                                here with arr_idx already advanced. */
                             merge_frame_t* f = stack_push(&stack);
+                            if (!f) {
+                                ok = false;
+                                break;
+                            }
                             f->kind = FRAME_OBJECT;
                             f->v1 = e1;
                             f->v2 = e2;
