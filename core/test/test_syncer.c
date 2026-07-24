@@ -541,6 +541,15 @@ int main(void) {
     TEST(test_legacy_api);
     TEST(test_circular_ref_detection);
     TEST(test_crdt_timestamp_resolution);
+    TEST(test_crdt_string_timestamps);
+    TEST(test_crdt_mixed_int_string_timestamps);
+    TEST(test_crdt_long_key_list);
+    TEST(test_crdt_keys_with_spaces);
+    TEST(test_crdt_equal_timestamps_merge);
+    TEST(test_one_sided_null_validates);
+    TEST(test_callback_bad_json_falls_back);
+    TEST(test_union_dedups_objects);
+    TEST(test_max_depth_one);
 
     printf("\n=== Results: %d/%d passed ===\n\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
