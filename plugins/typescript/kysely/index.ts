@@ -1,5 +1,5 @@
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
-import { mergeJson } from '../../../bindings/typescript/build/Release/syncer.node';
+import { mergeJson } from '../../../bindings/typescript';
 import { Kysely, sql } from 'kysely';
 
 /**
