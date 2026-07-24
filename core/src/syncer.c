@@ -240,6 +240,92 @@ static bool array_contains(yyjson_mut_val* arr, yyjson_val* needle) {
 }
 
 /* ========================================================================== */
+/*  Identity matching for SYNCER_ARRAY_MERGE_BY_KEY                           */
+/* ========================================================================== */
+
+/* Equality of two identity values across the mutable/immutable APIs.
+ * int-vs-string pairs are normalized (id 42 matches id "42") so a writer
+ * that switches the column type between number and string still reconciles
+ * against existing rows instead of duplicating them. Other type combinations
+ * fall back to serialize-and-compare. */
+static bool ident_values_equal(yyjson_mut_val* a, yyjson_val* b) {
+    if (yyjson_mut_is_int(a) && yyjson_is_int(b)) {
+        return yyjson_mut_get_sint(a) == yyjson_get_sint(b);
+    }
+    if (yyjson_mut_is_str(a) && yyjson_is_str(b)) {
+        return strcmp(yyjson_mut_get_str(a), yyjson_get_str(b)) == 0;
+    }
+    char ibuf[24];
+    const char* sa = yyjson_mut_get_str(a);
+    const char* sb = yyjson_get_str(b);
+    if (sa && yyjson_is_int(b)) {
+        snprintf(ibuf, sizeof(ibuf), "%lld", (long long)yyjson_get_sint(b));
+        return strcmp(sa, ibuf) == 0;
+    }
+    if (sb && yyjson_mut_is_int(a)) {
+        snprintf(ibuf, sizeof(ibuf), "%lld", (long long)yyjson_mut_get_sint(a));
+        return strcmp(sb, ibuf) == 0;
+    }
+    char* wa = yyjson_mut_val_write(a, 0, NULL);
+    char* wb = yyjson_val_write(b, 0, NULL);
+    bool eq = (wa && wb && strcmp(wa, wb) == 0);
+    free(wa);
+    free(wb);
+    return eq;
+}
+
+/* Determine the identity key for an incoming object element: the FIRST key in
+ * the comma-separated `match_keys` list that the element actually carries.
+ * Using only the first present key keeps matching deterministic — a later,
+ * weaker key (e.g. "name") can never override a missing match on a stronger
+ * one (e.g. "uuid"). Returns the identity value, or NULL if the element
+ * carries none of the keys. key_out/keylen_out receive the winning key. */
+static yyjson_val* ident_key_of(yyjson_val* elem, const char* match_keys,
+                                const char** key_out, size_t* keylen_out) {
+    if (!yyjson_is_obj(elem)) return NULL;
+    const char* seg = match_keys;
+    for (;;) {
+        const char* end = strchr(seg, ',');
+        size_t len = end ? (size_t)(end - seg) : strlen(seg);
+        while (len > 0 && *seg == ' ') { seg++; len--; }
+        while (len > 0 && seg[len - 1] == ' ') len--;
+        if (len > 0) {
+            yyjson_val* v = yyjson_obj_getn(elem, seg, len);
+            if (v) {
+                *key_out = seg;
+                *keylen_out = len;
+                return v;
+            }
+        }
+        if (!end) break;
+        seg = end + 1;
+    }
+    return NULL;
+}
+
+/* Find the element of `arr1` whose value at key[0..keylen) equals `ident`.
+ * Returns its index in *idx_out. First match wins on duplicate identities. */
+static yyjson_mut_val* find_by_ident(yyjson_mut_val* arr1, const char* key,
+                                     size_t keylen, yyjson_val* ident,
+                                     size_t* idx_out) {
+    size_t i = 0;
+    yyjson_mut_arr_iter iter;
+    yyjson_mut_arr_iter_init(arr1, &iter);
+    yyjson_mut_val* elem;
+    while ((elem = yyjson_mut_arr_iter_next(&iter))) {
+        if (yyjson_mut_is_obj(elem)) {
+            yyjson_mut_val* v = yyjson_mut_obj_getn(elem, key, keylen);
+            if (v && ident_values_equal(v, ident)) {
+                *idx_out = i;
+                return elem;
+            }
+        }
+        i++;
+    }
+    return NULL;
+}
+
+/* ========================================================================== */
 /*  CRDT Timestamp Resolution                                                 */
 /* ========================================================================== */
 
