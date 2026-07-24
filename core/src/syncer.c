@@ -477,6 +477,7 @@ static bool do_merge(
     bool resolve_ts = opts ? opts->resolve_by_timestamp : false;
     const char* lww_keys = (opts && opts->lww_keys) ? opts->lww_keys : "updatedAt";
     const char* fww_keys = (opts && opts->fww_keys) ? opts->fww_keys : NULL;
+    const char* match_keys = (opts && opts->array_match_keys) ? opts->array_match_keys : "id";
 
     bool ok = !stack.oom && !path.oom && !visited.oom;
 
