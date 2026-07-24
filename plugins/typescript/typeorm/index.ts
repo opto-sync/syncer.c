@@ -27,12 +27,16 @@ export function SyncerJsonbTransformer<T>(strategy: BaseMergeStrategy<T>) {
  * Requires querying the DB using QueryBuilder to get the raw string.
  */
 export async function typeOrmSyncMerge<T>(
-  repository: any, 
-  id: string | number, 
-  columnName: string, 
-  incomingRawJson: string, 
+  repository: any,
+  id: string | number,
+  columnName: string,
+  incomingRawJson: string,
   strategy: BaseMergeStrategy<T>
 ): Promise<void> {
+  if (!SAFE_IDENTIFIER.test(columnName)) {
+    throw new Error(`opto-sync: unsafe column name ${JSON.stringify(columnName)}`);
+  }
+
   // 1. Query raw string
   const rawResult = await repository
     .createQueryBuilder('entity')
@@ -43,15 +47,24 @@ export async function typeOrmSyncMerge<T>(
   const currentRawJson = rawResult ? rawResult.raw_json : '{}';
 
   // 2. Merge in C
-  const mergedString = mergeJson(currentRawJson, incomingRawJson, strategy.handleConflict.bind(strategy));
+  const mergedString = mergeJson(currentRawJson, incomingRawJson, {
+    overrideCb: strategy.toNativeCallback(),
+  });
+  if (mergedString === null) {
+    throw new Error('opto-sync merge failed: input was not valid JSON');
+  }
 
-  // 3. Update using raw string (bypassing object creation entirely)
+  // 3. Update using raw string (bypassing object creation entirely).
+  //    The merged JSON travels as a BOUND PARAMETER — interpolating it into
+  //    the SQL text breaks on any quote in the data and is injectable when
+  //    the JSON content is attacker-controlled.
   await repository
     .createQueryBuilder()
     .update()
     .set({
-      [columnName]: () => `'${mergedString}'::jsonb`
+      [columnName]: () => 'CAST(:mergedJson AS jsonb)'
     })
+    .setParameter('mergedJson', mergedString)
     .where('id = :id', { id })
     .execute();
 }
