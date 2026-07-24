@@ -524,6 +524,168 @@ static void test_max_depth_one(void) {
 }
 
 /* ========================================================================== */
+/*  Test: MERGE_BY_KEY — reconcile objects-in-arrays by identity key          */
+/* ========================================================================== */
+
+static void test_merge_by_key_basic(void) {
+    /* Matched id=1 deep-merges; id=3 appends; id=2 (v1-only) survives. */
+    const char* j1 = "{\"items\":[{\"id\":1,\"name\":\"alpha\",\"qty\":5},{\"id\":2,\"name\":\"beta\"}]}";
+    const char* j2 = "{\"items\":[{\"id\":1,\"qty\":7},{\"id\":3,\"name\":\"gamma\"}]}";
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "name", "alpha"));   /* kept from v1 on merged elem */
+    assert(json_has_num(r, "qty", 7));          /* updated from v2 */
+    assert(json_has_str(r, "name", "beta"));    /* v1-only element kept */
+    assert(json_has_str(r, "name", "gamma"));   /* new element appended */
+    assert(strstr(r, "\"qty\":5") == NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_lww_timestamps(void) {
+    /* Per-element LWW: stale incoming element rejected, fresh one accepted —
+       both in the SAME array, which MERGE_BY_INDEX cannot express when order
+       differs. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt,syncedAt";
+    const char* j1 = "{\"rows\":["
+        "{\"id\":\"a\",\"updatedAt\":200,\"val\":\"base-a\"},"
+        "{\"id\":\"b\",\"updatedAt\":100,\"val\":\"base-b\"}]}";
+    const char* j2 = "{\"rows\":["
+        "{\"id\":\"b\",\"updatedAt\":150,\"val\":\"new-b\"},"
+        "{\"id\":\"a\",\"updatedAt\":100,\"val\":\"stale-a\"}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "val", "base-a"));  /* stale incoming rejected */
+    assert(json_has_str(r, "val", "new-b"));   /* fresh incoming accepted */
+    assert(strstr(r, "stale-a") == NULL);
+    assert(strstr(r, "base-b") == NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_fww_created_at(void) {
+    /* FWW on createdAt: an incoming element claiming a LATER creation for the
+       same identity is rejected wholesale. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    opts.resolve_by_timestamp = true;
+    opts.fww_keys = "createdAt";
+    const char* j1 = "{\"rows\":[{\"id\":1,\"createdAt\":100,\"who\":\"original\"}]}";
+    const char* j2 = "{\"rows\":[{\"id\":1,\"createdAt\":300,\"who\":\"impostor\"}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "who", "original"));
+    assert(strstr(r, "impostor") == NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_id_type_normalization(void) {
+    /* Numeric id 42 must match string id "42" — no duplicate row. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j1 = "{\"rows\":[{\"id\":42,\"v\":\"old\"}]}";
+    const char* j2 = "{\"rows\":[{\"id\":\"42\",\"v\":\"new\"}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "v", "new"));
+    assert(strstr(r, "old") == NULL);
+    /* exactly one row */
+    assert(strstr(r, "},{") == NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_custom_match_keys(void) {
+    /* "uuid,id": uuid is the identity when present; elements without uuid
+       fall back to id. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    opts.array_match_keys = "uuid,id";
+    const char* j1 = "{\"rows\":[{\"uuid\":\"u-1\",\"v\":1},{\"id\":7,\"v\":2}]}";
+    const char* j2 = "{\"rows\":[{\"uuid\":\"u-1\",\"v\":10},{\"id\":7,\"v\":20}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_num(r, "v", 10));
+    assert(json_has_num(r, "v", 20));
+    assert(strstr(r, "\"v\":1,") == NULL && strstr(r, "\"v\":1}") == NULL);
+    assert(strstr(r, "\"v\":2}") == NULL && strstr(r, "\"v\":2,") == NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_idempotent(void) {
+    /* Merging the same payload twice must be a no-op (critical for sync
+       retries): matched ids re-merge in place, scalars union. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j1 = "{\"rows\":[{\"id\":1,\"v\":1}],\"tags\":[\"x\",\"y\"]}";
+    const char* j2 = "{\"rows\":[{\"id\":1,\"v\":2},{\"id\":2,\"v\":3}],\"tags\":[\"y\",\"z\"]}";
+    char* once = syncer_merge_json_ex(j1, j2, &opts);
+    assert(once != NULL);
+    char* twice = syncer_merge_json_ex(once, j2, &opts);
+    assert(twice != NULL);
+    assert(strcmp(once, twice) == 0);
+    syncer_free(once);
+    syncer_free(twice);
+}
+
+static void test_merge_by_key_nested_deep_merge(void) {
+    /* Matched elements deep-merge their nested objects, and nested arrays of
+       keyed objects reconcile too. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j1 = "{\"rows\":[{\"id\":1,\"meta\":{\"a\":1,\"b\":2},"
+                     "\"children\":[{\"id\":\"c1\",\"n\":\"kid\"}]}]}";
+    const char* j2 = "{\"rows\":[{\"id\":1,\"meta\":{\"b\":3},"
+                     "\"children\":[{\"id\":\"c1\",\"age\":4},{\"id\":\"c2\",\"n\":\"kid2\"}]}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_num(r, "a", 1));          /* nested obj kept */
+    assert(json_has_num(r, "b", 3));          /* nested obj updated */
+    assert(json_has_str(r, "n", "kid"));      /* nested matched child kept fields */
+    assert(json_has_num(r, "age", 4));        /* nested matched child merged */
+    assert(json_has_str(r, "n", "kid2"));     /* nested new child appended */
+    syncer_free(r);
+}
+
+static void test_merge_by_key_mixed_and_missing_ids(void) {
+    /* Scalars and id-less objects get UNION semantics; keyed objects merge. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j1 = "{\"arr\":[1,{\"note\":\"free\"},{\"id\":1,\"v\":\"a\"}]}";
+    const char* j2 = "{\"arr\":[1,2,{\"note\":\"free\"},{\"id\":1,\"v\":\"b\"}]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "v", "b"));
+    /* scalar 1 and {"note":"free"} not duplicated; 2 appended */
+    assert(strstr(r, "\"note\":\"free\"}") != NULL);
+    assert(strstr(r, "[1,{") != NULL);
+    assert(strstr(r, ",2]") != NULL || strstr(r, ",2,") != NULL);
+    syncer_free(r);
+}
+
+static void test_merge_by_key_at_root(void) {
+    /* Root-level arrays (whole jsonb column is an array) reconcile too. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    opts.resolve_by_timestamp = true;
+    const char* j1 = "[{\"id\":1,\"updatedAt\":200,\"v\":\"keep\"}]";
+    const char* j2 = "[{\"id\":1,\"updatedAt\":100,\"v\":\"stale\"},{\"id\":2,\"v\":\"new\"}]";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "v", "keep"));
+    assert(json_has_str(r, "v", "new"));
+    assert(strstr(r, "stale") == NULL);
+    syncer_free(r);
+}
+
+static void test_version_string(void) {
+    const char* v = syncer_version();
+    assert(v != NULL && strlen(v) >= 5);
+}
+
+/* ========================================================================== */
 /*  Main                                                                      */
 /* ========================================================================== */
 
