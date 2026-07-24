@@ -644,9 +644,12 @@ static bool do_merge(
         }
     }
 
+    if (path.oom || stack.oom || visited.oom) ok = false;
+
     stack_free(&stack);
     path_free(&path);
     if (opts && opts->detect_circular_refs) visited_free(&visited);
+    return ok;
 }
 
 /* ========================================================================== */
