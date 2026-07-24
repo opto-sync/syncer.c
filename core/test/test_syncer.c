@@ -238,6 +238,8 @@ static void test_invalid_json(void) {
 /* ========================================================================== */
 
 static char* legacy_override(const char* key, const char* val1, const char* val2) {
+    (void)val1;
+    (void)val2;
     if (strcmp(key, "priority") == 0) {
         return strdup("999");
     }
