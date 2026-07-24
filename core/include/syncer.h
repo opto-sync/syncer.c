@@ -16,7 +16,11 @@ typedef enum {
     SYNCER_ARRAY_REPLACE = 0,      /* v2 array completely replaces v1 (default) */
     SYNCER_ARRAY_APPEND,           /* concatenate v2 elements after v1 */
     SYNCER_ARRAY_UNION,            /* append only elements from v2 not already in v1 */
-    SYNCER_ARRAY_MERGE_BY_INDEX    /* merge element-wise: v1[i] deep-merged with v2[i] */
+    SYNCER_ARRAY_MERGE_BY_INDEX,   /* merge element-wise: v1[i] deep-merged with v2[i] */
+    SYNCER_ARRAY_MERGE_BY_KEY      /* match object elements by identity key(s), deep-merge
+                                      matched pairs (honoring timestamp resolution), append
+                                      unmatched v2 elements, keep v1-only elements.
+                                      Non-object elements behave like UNION (idempotent). */
 } syncer_array_strategy_t;
 
 /* --------------------------------------------------------------------------
