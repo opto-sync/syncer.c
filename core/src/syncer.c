@@ -135,9 +135,16 @@ static bool visited_contains(const visited_set_t* v, const void* a, const void* 
 }
 
 static void visited_add(visited_set_t* v, const void* a, const void* b) {
+    if (v->oom) return;
     if (v->count == v->cap) {
-        v->cap *= 2;
-        v->items = (visited_pair_t*)realloc(v->items, v->cap * sizeof(visited_pair_t));
+        size_t cap = v->cap * 2;
+        visited_pair_t* grown = (visited_pair_t*)realloc(v->items, cap * sizeof(visited_pair_t));
+        if (!grown) {
+            v->oom = true;
+            return;
+        }
+        v->items = grown;
+        v->cap = cap;
     }
     v->items[v->count].a = (uintptr_t)a;
     v->items[v->count].b = (uintptr_t)b;
