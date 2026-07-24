@@ -488,26 +488,33 @@ static bool do_merge(
                     continue;
                 }
 
-                /* Try callback first */
+                /* Try callback first. Only short-circuit when the override
+                   produced parseable JSON; an unparseable result falls back
+                   to the default deep merge (mirrors merge_leaf) instead of
+                   silently dropping v2's subtree. */
                 if (opts && opts->override_cb) {
                     char* s1 = yyjson_mut_val_write(val1, 0, NULL);
                     char* s2 = yyjson_val_write(val2, 0, NULL);
-                    char* res = opts->override_cb(path.buf, s1, s2);
+                    char* res = (s1 && s2) ? opts->override_cb(path.buf, s1, s2) : NULL;
                     free(s1);
                     free(s2);
                     if (res) {
                         yyjson_doc* pd = yyjson_read(res, strlen(res), 0);
+                        free(res);
                         if (pd) {
                             yyjson_mut_val* mv = yyjson_val_mut_copy(doc, yyjson_doc_get_root(pd));
                             yyjson_doc_free(pd);
-                            yyjson_mut_obj_put(top->v1, yyjson_mut_str(doc, key_str), mv);
+                            if (mv) yyjson_mut_obj_put(top->v1, yyjson_mut_str(doc, key_str), mv);
+                            path_restore(&path, saved);
+                            continue;
                         }
-                        free(res);
-                        path_restore(&path, saved);
-                        continue;
                     }
                 }
                 merge_frame_t* f = stack_push(&stack);
+                if (!f) {
+                    ok = false;
+                    break;
+                }
                 f->kind = FRAME_OBJECT;
                 f->v1 = val1;
                 f->v2 = val2;
@@ -520,6 +527,10 @@ static bool do_merge(
             if (yyjson_mut_is_arr(val1) && yyjson_is_arr(val2)
                 && arr_strat != SYNCER_ARRAY_REPLACE) {
                 merge_frame_t* f = stack_push(&stack);
+                if (!f) {
+                    ok = false;
+                    break;
+                }
                 f->kind = FRAME_ARRAY;
                 f->v1 = val1;
                 f->v2 = val2;
