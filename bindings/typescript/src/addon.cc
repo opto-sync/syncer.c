@@ -55,6 +55,7 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     syncer_merge_options_t opts = syncer_default_options();
     std::string lww_keys_storage; /* to keep the string alive if we copy it */
     std::string fww_keys_storage;
+    Napi::FunctionReference cbRef; /* per-call callback ref; released on return */
 
     if (info.Length() >= 3 && info[2].IsObject()) {
         Napi::Object jOpts = info[2].As<Napi::Object>();
