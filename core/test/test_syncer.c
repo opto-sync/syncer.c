@@ -322,6 +322,204 @@ static void test_crdt_timestamp_resolution(void) {
 }
 
 /* ========================================================================== */
+/*  Test: CRDT string timestamps compare numerically, not lexicographically   */
+/* ========================================================================== */
+
+static void test_crdt_string_timestamps(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt";
+
+    /* Digit strings of different lengths: 10 > 9, even though strcmp("10","9") < 0.
+       Incoming ("10") is newer -> must be accepted. */
+    const char* j1 = "{\"doc\":{\"updatedAt\":\"9\",\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":\"10\",\"val\":\"incoming\"}}";
+    char* r1 = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r1 != NULL);
+    assert(json_has_str(r1, "val", "incoming"));
+    syncer_free(r1);
+
+    /* Reversed: base "10" is newer than incoming "9" -> incoming dropped. */
+    char* r2 = syncer_merge_json_ex(j2, j1, &opts);
+    assert(r2 != NULL);
+    assert(json_has_str(r2, "val", "incoming")); /* base of this call */
+    syncer_free(r2);
+
+    /* Epoch-millis strings with realistic lengths. */
+    const char* j3 = "{\"doc\":{\"updatedAt\":\"1689940800000\",\"val\":\"base\"}}";
+    const char* j4 = "{\"doc\":{\"updatedAt\":\"999999999999\",\"val\":\"older\"}}"; /* 12 digits < 13 digits */
+    char* r3 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r3 != NULL);
+    assert(json_has_str(r3, "val", "base")); /* older incoming rejected */
+    syncer_free(r3);
+
+    /* ISO-8601 strings are fixed-width: lexicographic == chronological. */
+    const char* j5 = "{\"doc\":{\"updatedAt\":\"2026-07-24T10:00:00Z\",\"val\":\"base\"}}";
+    const char* j6 = "{\"doc\":{\"updatedAt\":\"2026-07-23T10:00:00Z\",\"val\":\"older\"}}";
+    char* r4 = syncer_merge_json_ex(j5, j6, &opts);
+    assert(r4 != NULL);
+    assert(json_has_str(r4, "val", "base"));
+    syncer_free(r4);
+}
+
+/* ========================================================================== */
+/*  Test: CRDT int-vs-string timestamp pairs still resolve (no type bypass)   */
+/* ========================================================================== */
+
+static void test_crdt_mixed_int_string_timestamps(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt";
+
+    /* Base int 100 vs incoming string "99": base newer -> incoming dropped. */
+    const char* j1 = "{\"doc\":{\"updatedAt\":100,\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":\"99\",\"val\":\"incoming\"}}";
+    char* r1 = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r1 != NULL);
+    assert(json_has_str(r1, "val", "base"));
+    syncer_free(r1);
+
+    /* Base string "99" vs incoming int 100: incoming newer -> accepted. */
+    const char* j3 = "{\"doc\":{\"updatedAt\":\"99\",\"val\":\"base\"}}";
+    const char* j4 = "{\"doc\":{\"updatedAt\":100,\"val\":\"incoming\"}}";
+    char* r2 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r2 != NULL);
+    assert(json_has_str(r2, "val", "incoming"));
+    syncer_free(r2);
+}
+
+/* ========================================================================== */
+/*  Test: CRDT key lists longer than any internal buffer + spaces + equal ts  */
+/* ========================================================================== */
+
+static void test_crdt_long_key_list(void) {
+    /* Build a keys list well past 256 chars with the real key at the END —
+       a fixed-size internal copy would truncate it away. */
+    char keys[512];
+    size_t pos = 0;
+    for (int i = 0; i < 30; i++) {
+        pos += (size_t)snprintf(keys + pos, sizeof(keys) - pos, "padding_key_%02d,", i);
+    }
+    snprintf(keys + pos, sizeof(keys) - pos, "updatedAt");
+    assert(strlen(keys) > 256);
+
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = keys;
+
+    const char* j1 = "{\"doc\":{\"updatedAt\":200,\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":100,\"val\":\"stale\"}}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "val", "base")); /* stale incoming still rejected */
+    syncer_free(r);
+}
+
+static void test_crdt_keys_with_spaces(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt, syncedAt"; /* note the space */
+
+    /* Only syncedAt present; base is newer -> incoming dropped. */
+    const char* j1 = "{\"doc\":{\"syncedAt\":200,\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"syncedAt\":100,\"val\":\"stale\"}}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "val", "base"));
+    syncer_free(r);
+}
+
+static void test_crdt_equal_timestamps_merge(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt";
+
+    /* Equal stamps: neither side is "newer" -> normal merge, v2 field wins. */
+    const char* j1 = "{\"doc\":{\"updatedAt\":100,\"val\":\"base\",\"keep\":1}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":100,\"val\":\"incoming\"}}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "val", "incoming"));
+    assert(json_has_num(r, "keep", 1)); /* sibling untouched */
+    syncer_free(r);
+}
+
+/* ========================================================================== */
+/*  Test: one-sided merges validate the present side                          */
+/* ========================================================================== */
+
+static void test_one_sided_null_validates(void) {
+    /* Invalid JSON on the only present side must return NULL, matching the
+       documented contract — never echo unparsed input back to the caller. */
+    assert(syncer_merge_json(NULL, "{not json", NULL) == NULL);
+    assert(syncer_merge_json("{not json", NULL, NULL) == NULL);
+
+    /* Valid one-sided input round-trips (normalized). */
+    char* r = syncer_merge_json(NULL, "{ \"a\" : 1 }", NULL);
+    assert(r != NULL);
+    assert(json_has_num(r, "a", 1));
+    syncer_free(r);
+}
+
+/* ========================================================================== */
+/*  Test: an override returning unparseable JSON falls back to default merge  */
+/* ========================================================================== */
+
+static char* bad_json_override(const char* json_path, const char* val1, const char* val2) {
+    (void)val1;
+    (void)val2;
+    if (strcmp(json_path, "$.user") == 0) {
+        char* junk = (char*)malloc(8);
+        strcpy(junk, "{oops");
+        return junk;
+    }
+    return NULL;
+}
+
+static void test_callback_bad_json_falls_back(void) {
+    const char* j1 = "{\"user\":{\"name\":\"old\",\"keep\":1}}";
+    const char* j2 = "{\"user\":{\"name\":\"new\"}}";
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.override_cb = bad_json_override;
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    /* The bad override must not drop v2's subtree NOR clobber v1's siblings:
+       default deep merge proceeds. */
+    assert(json_has_str(r, "name", "new"));
+    assert(json_has_num(r, "keep", 1));
+    syncer_free(r);
+}
+
+/* ========================================================================== */
+/*  Test: UNION dedups whole objects; max_depth=1 replaces at the first level */
+/* ========================================================================== */
+
+static void test_union_dedups_objects(void) {
+    const char* j1 = "{\"arr\":[{\"a\":1}]}";
+    const char* j2 = "{\"arr\":[{\"a\":1},{\"b\":2}]}";
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_UNION;
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(strstr(r, "[{\"a\":1},{\"b\":2}]") != NULL); /* {"a":1} not duplicated */
+    syncer_free(r);
+}
+
+static void test_max_depth_one(void) {
+    const char* j1 = "{\"a\":{\"x\":1},\"b\":2}";
+    const char* j2 = "{\"a\":{\"y\":9}}";
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.max_depth = 1;
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    /* At depth 1 the "a" subtree is leaf-merged: v2 replaces it wholesale. */
+    assert(json_has_num(r, "y", 9));
+    assert(strstr(r, "\"x\"") == NULL);
+    assert(json_has_num(r, "b", 2)); /* untouched sibling survives */
+    syncer_free(r);
+}
+
+/* ========================================================================== */
 /*  Main                                                                      */
 /* ========================================================================== */
 
