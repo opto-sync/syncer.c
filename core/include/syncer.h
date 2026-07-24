@@ -52,6 +52,10 @@ typedef struct {
     bool                        resolve_by_timestamp; /* Enable CRDT-like timestamp resolution */
     const char*                 lww_keys;             /* Comma-separated keys for Last-Write-Wins (e.g., "updatedAt,syncedAt") */
     const char*                 fww_keys;             /* Comma-separated keys for First-Write-Wins (e.g., "createdAt") */
+    const char*                 array_match_keys;     /* Comma-separated identity keys for
+                                                         SYNCER_ARRAY_MERGE_BY_KEY (e.g., "id,uuid").
+                                                         The first listed key present in an incoming
+                                                         element is its identity. NULL = "id". */
 } syncer_merge_options_t;
 
 /**
