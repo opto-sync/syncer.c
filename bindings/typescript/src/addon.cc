@@ -57,7 +57,14 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     std::string fww_keys_storage;
     Napi::FunctionReference cbRef; /* per-call callback ref; released on return */
 
-    if (info.Length() >= 3 && info[2].IsObject()) {
+    /* IsFunction must be tested BEFORE IsObject: node-addon-api's IsObject()
+       is true for functions, so an object-first dispatch makes the legacy
+       positional-callback branch unreachable. */
+    if (info.Length() >= 3 && info[2].IsFunction()) {
+        /* Legacy fallback: 3rd arg is directly the callback */
+        cbRef.Reset(info[2].As<Napi::Function>(), 1);
+        opts.override_cb = cpp_override_cb;
+    } else if (info.Length() >= 3 && info[2].IsObject()) {
         Napi::Object jOpts = info[2].As<Napi::Object>();
         
         if (jOpts.Has("arrayStrategy") && jOpts.Get("arrayStrategy").IsNumber()) {
