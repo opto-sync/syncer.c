@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client/extension';
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
-import { mergeJson } from '../../../bindings/typescript/build/Release/syncer.node';
+import { mergeJson } from '../../../bindings/typescript';
 
 /**
  * Creates a Prisma Client Extension that automatically merges JSONB fields 
