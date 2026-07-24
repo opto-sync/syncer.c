@@ -123,6 +123,8 @@ static char* captured_paths[32];
 static int   captured_count = 0;
 
 static char* path_capture_cb(const char* json_path, const char* val1, const char* val2) {
+    (void)val1;
+    (void)val2;
     if (captured_count < 32) {
         captured_paths[captured_count++] = strdup(json_path);
     }
