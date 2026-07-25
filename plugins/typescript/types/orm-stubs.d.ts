@@ -50,4 +50,4 @@ declare module 'kysely' {
 /* `setTimeout` is used for the Prisma extension's CAS backoff. The real build
    gets it from @types/node (see tsconfig.real.json); this minimal declaration
    keeps the dependency-free stub check working with "types": []. */
-declare function setTimeout(handler: () => void, timeout?: number): unknown;
+declare function setTimeout(handler: (...args: any[]) => void, timeout?: number): unknown;
