@@ -54,6 +54,13 @@ typedef struct {
     bool                        resolve_by_timestamp; /* Enable CRDT-like timestamp resolution */
     const char*                 lww_keys;             /* Comma-separated keys for Last-Write-Wins (e.g., "updatedAt,syncedAt") */
     const char*                 fww_keys;             /* Comma-separated keys for First-Write-Wins (e.g., "createdAt") */
+    /* Timestamp comparison: int-vs-int compares exactly (nanosecond-safe);
+       any numeric pair involving a real compares as double; string-vs-string
+       compares numerically for pure-digit strings, else lexicographically
+       (correct for fixed-width ISO-8601); int-vs-string normalizes the int.
+       Mixing FORMATS across replicas (epoch on one side, ISO-8601 on the
+       other) compares lexicographically and is NOT chronologically meaningful
+       — use one timestamp format consistently per key. */
     const char*                 array_match_keys;     /* Comma-separated identity keys for
                                                          SYNCER_ARRAY_MERGE_BY_KEY (e.g., "id,uuid").
                                                          The first listed key present in an incoming
