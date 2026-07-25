@@ -150,7 +150,8 @@ integers exactly; this is asserted per runtime by the cross-server suite.
 ### Resolution is per node, all-or-nothing
 
 A timestamp gates the object node that contains it. If the base node wins, the
-**entire** incoming node is rejected, not merely its conflicting fields. This
+**entire** incoming node is rejected, not merely its conflicting fields — see
+the FWW warning above for how badly that reads when the guard is inverted. This
 is what makes stale-write rejection meaningful, and it has a consequence worth
 understanding:
 
