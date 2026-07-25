@@ -8,6 +8,11 @@ pub enum ArrayMergeStrategy {
     Append = 1,
     Union = 2,
     MergeByIndex = 3,
+    /// Match object elements by identity key(s) (`array_match_keys`, default
+    /// `"id"`), deep-merge matched pairs (honoring timestamp resolution per
+    /// element), append unmatched incoming elements, keep existing-only
+    /// elements. Non-object elements get UNION (idempotent) semantics.
+    MergeByKey = 4,
 }
 
 pub type MergeOverrideCbEx = extern "C" fn(
