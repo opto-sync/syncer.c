@@ -194,10 +194,15 @@ if [ "$MODE" = "repro" ]; then
     art="$REPRO_ARG"
     [ -f "$art" ] || art="/src/core/test/fuzz/$REPRO_ARG"
     [ -f "$art" ] || { echo "no such artifact: $REPRO_ARG"; exit 2; }
-    # The harness name is the artifact prefix: "<harness>-crash-<hash>".
+    # Artifacts are named "<harness>-crash-<sha1>" (or "<harness>-leak-crash-…"),
+    # and harness names use underscores, so everything up to the first hyphen is
+    # the harness — no separate bookkeeping needed to replay one.
     base="$(basename "$art")"
     name="${base%%-*}"
-    case "$name" in fuzz) name="$(echo "$base" | cut -d- -f1,2)";; esac
+    case " $ALL_HARNESSES " in
+        *" $name "*) ;;
+        *) echo "cannot infer harness from '$base' (expected one of: $ALL_HARNESSES)"; exit 2;;
+    esac
     banner "REPRO $base  with $name"
     build_harness "$name" "fuzzer-no-link,address,undefined" "fuzzer,address,undefined" "_asan_ubsan" || exit 1
     "$WORK/bin/${name}_asan_ubsan" "$art"
@@ -220,9 +225,12 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "fuzz" ]; then
         run_harness "$h" "_asan_ubsan" "$DURATION"
     done
 
-    # Leak-focused pass. Shorter by design: the corpus is already grown by the
-    # pass above, and -runs replays it deterministically under LSan rather than
-    # spending the budget discovering new coverage a second time.
+    # Leak-focused pass over the SAME corpus the run above grew. libFuzzer always
+    # replays the whole corpus at startup, so every input already discovered is
+    # re-executed under LeakSanitizer before this pass starts mutating — which is
+    # the point: the ASan-only build attributes a leak unambiguously, with no
+    # UBSan diagnostics in the way. It runs faster too (no UBSan checks), so the
+    # same wall clock buys roughly 3x the executions.
     for h in $HARNESSES; do
         banner "LEAK PASS ${h} (ASan+LSan, corpus replay + ${DURATION}s)"
         corpus="$WORK/${h/fuzz_/corpus_}"

@@ -16,7 +16,7 @@ exception in the calling process instead of taking down the whole VM.
 | Public module | `Syncer` |
 | NIF crate | [`native/syncer_nif`](native/syncer_nif) |
 | Core version | `0.2.0` (`Syncer.version/0`) |
-| Status | **implemented** — 33 tests + 4 doctests green |
+| Status | **implemented** — 35 tests + 4 doctests green |
 
 ## Installation
 
@@ -81,6 +81,12 @@ The core returns `NULL` when it cannot produce a result — invalid JSON on
 either side, an interior NUL byte in a binary, or allocation failure. The
 binding maps that to `{:error, :merge_failed}`. It never returns an empty
 binary as a stand-in for failure, and never raises for ordinary bad input.
+
+Inputs are taken as raw binaries rather than Elixir `String`s, so a binary that
+is not valid UTF-8 (a corrupt blob out of a database) also yields
+`{:error, :merge_failed}` instead of an `ArgumentError` from the NIF decoder —
+JSON is UTF-8 by definition (RFC 8259 §8.1), so such input is simply invalid
+JSON.
 
 Bad *options*, on the other hand, are a programming error and raise
 `ArgumentError` (unknown key, unknown array strategy, non-boolean flag, …).
@@ -185,7 +191,7 @@ the parts you can automatically, resolving the rest in Elixir.
 
 ## Tests
 
-37 assertions-heavy checks (33 tests + 4 doctests) covering deep merge, all
+39 assertion-heavy checks (35 tests + 4 doctests) covering deep merge, all
 five array strategies, `:merge_by_key` reconciliation (deep-merged matched
 pair, stale element rejected by `updatedAt`, fresh sibling applied, new id
 appended, base-only kept), custom `array_match_keys`, `createdAt` FWW
