@@ -1,0 +1,80 @@
+# libFuzzer dictionary for the opto-sync merge harnesses.
+#
+# Two groups matter here. The JSON structural tokens let the mutator build
+# syntactically plausible documents far faster than byte flips can, and the
+# option key names let it hit the semantic branches — a merge only exercises
+# LWW/FWW resolution or identity matching if the *exact* configured key names
+# appear on BOTH sides of the input, which random mutation essentially never
+# discovers on its own.
+
+# --- record separator: splits the input into json1 / json2 (see fuzz_util.h) --
+sep="\x1e"
+
+# --- JSON structural tokens ---------------------------------------------------
+obj_open="{"
+obj_close="}"
+arr_open="["
+arr_close="]"
+colon=":"
+comma=","
+quote="\""
+empty_obj="{}"
+empty_arr="[]"
+obj_kv="{\"a\":"
+nest_obj="{\"a\":{\"b\":"
+nest_arr="[[]]"
+
+# --- JSON literals ------------------------------------------------------------
+lit_true="true"
+lit_false="false"
+lit_null="null"
+num_zero="0"
+num_neg="-1"
+num_real="1.5"
+num_exp="1e309"
+num_big="9223372036854775807"
+num_bigneg="-9223372036854775808"
+num_leadzero="007"
+
+# --- escapes (parser edge cases that reach the key/value length handling) -----
+esc_quote="\\\""
+esc_backslash="\\\\"
+esc_nul="\\u0000"
+esc_surrogate_hi="\\ud83d"
+esc_surrogate_pair="\\ud83d\\ude00"
+esc_bmp="\\u00e9"
+esc_newline="\\n"
+utf8_2byte="\xc3\xa9"
+utf8_3byte="\xe6\x97\xa5"
+utf8_4byte="\xf0\x9f\x98\x80"
+
+# --- identity keys (array_match_keys) -----------------------------------------
+key_id="\"id\":"
+key_uuid="\"uuid\":"
+key_key="\"key\":"
+id_int="\"id\":1"
+id_str="\"id\":\"1\""
+id_uuid_str="\"id\":\"a1b2c3d4\""
+
+# --- LWW keys ------------------------------------------------------------------
+key_updatedat="\"updatedAt\":"
+key_syncedat="\"syncedAt\":"
+key_rev="\"rev\":"
+
+# --- FWW keys ------------------------------------------------------------------
+key_createdat="\"createdAt\":"
+key_firstseenat="\"firstSeenAt\":"
+
+# --- realistic timestamp shapes ------------------------------------------------
+ts_epoch_s="1700000000"
+ts_epoch_ms="1700000000000"
+ts_epoch_ns="1700000000000000000"
+ts_epoch_float="1700000000.5"
+ts_digit_string="\"1700000000000\""
+ts_iso="\"2024-01-15T10:30:00Z\""
+ts_iso_frac="\"2024-01-15T10:30:00.123456Z\""
+
+# --- whole record shapes the engine is designed for ---------------------------
+row="{\"id\":1,\"updatedAt\":2,\"createdAt\":1}"
+rows="[{\"id\":1,\"updatedAt\":2},{\"id\":2,\"updatedAt\":3}]"
+keyed_arr="\"items\":[{\"id\":1}]"
