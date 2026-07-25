@@ -194,7 +194,7 @@ honors a `.dockerignore` at the context root. Without it, host `node_modules/`,
 **Fix.**
 
 ```sh
-cp opto-sync-e2e/context.dockerignore /path/to/opto-sync/.dockerichore  # note: .dockerignore
+cp opto-sync-e2e/context.dockerignore /path/to/opto-sync/.dockerignore
 ```
 
 Also: `rust-mash` is opt-in behind the `mash` profile because it is inert
