@@ -532,7 +532,7 @@ with persistence re-read over an independent connection.
 | sqlx | implemented | `plugins/rust/sqlx/src/lib.rs` (4 tests) | **unit only** — no sqlx, no database | no | **yes** |
 | seaorm | implemented | `plugins/rust/seaorm/src/lib.rs` (4 tests) | **unit only** — no SeaORM, no database | no | **yes** |
 | gorm | implemented | `plugins/go/gorm/syncer_test.go` (19 tests) | integration (real `gorm.io/driver/postgres`) | **yes** — both the losing and the safe form | partly — CI runs `go build` + `go vet` only |
-| ecto | implemented | `plugins/beam/ecto/test/opto_sync_ecto_test.exs` (22 tests + 3 doctests, hermetic) and `test/postgres_integration_test.exs` (4 tests, tagged `:integration`, excluded by default) | changeset unit tests + opt-in integration | **no** — the "two writers" test is sequential | **no** — no BEAM job exists in `.github/workflows/ci.yml` |
+| ecto | implemented | `plugins/beam/ecto/test/opto_sync_ecto_test.exs` (22 tests, plus `doctest OptoSyncEcto` → 3 doctests in `lib/ecto_syncer.ex`; hermetic) and `test/postgres_integration_test.exs` (4 tests, tagged `:integration`, excluded by default) | changeset unit tests + opt-in integration | **no** — the "two writers" test is sequential | **no** — no BEAM job exists in `.github/workflows/ci.yml` |
 
 Test counts above are `test(...)` / `#[test]` / `func Test…` declarations counted
 in the files named.
