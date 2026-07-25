@@ -97,18 +97,43 @@ export LSAN_OPTIONS="report_objects=1"
 banner() { echo; echo "======================================================================"; echo "  $*"; echo "======================================================================"; }
 
 # ---------------------------------------------------------------------------
-#  build_harness <name> <sanitizer-spec> <suffix>
+#  Build. yyjson.c is ~23k lines and takes ~40s to instrument, so the core is
+#  compiled to objects ONCE per sanitizer variant and linked into every
+#  harness. Compiling the full TU per harness would dominate a 60s-per-harness
+#  CI budget entirely.
+#
+#  COV = the extra coverage signals worth their instrumentation cost here:
+#    trace-cmp  — the decisive one. Nearly every semantic branch in the engine
+#                 is a string compare against a configured key name
+#                 ("updatedAt", "id"); without comparison tracing the fuzzer is
+#                 reduced to guessing those literals byte by byte.
+#    trace-div  — the timestamp/number normalisation paths.
+#    trace-gep  — array indexing in the by-index / by-key strategies.
 # ---------------------------------------------------------------------------
+COV="-fsanitize-coverage=trace-cmp,trace-div,trace-gep"
+BASE_CFLAGS="-g -O1 -fno-omit-frame-pointer -Wall -Wextra"
+
+build_core() {
+    local san="$1" suffix="$2"
+    if [ -f "$WORK/bin/yyjson${suffix}.o" ]; then return 0; fi
+    echo "  compiling core objects for -fsanitize=${san} (once)"
+    clang -c $BASE_CFLAGS -fsanitize="$san" $COV $INCLUDES \
+          -o "$WORK/bin/yyjson${suffix}.o" "$WORK/src/yyjson.c" || return 1
+    clang -c $BASE_CFLAGS -fsanitize="$san" $COV $INCLUDES \
+          -o "$WORK/bin/syncer${suffix}.o" "$WORK/src/syncer.c" || return 1
+}
+
+# build_harness <name> <no-link sanitizer spec> <link sanitizer spec> <suffix>
 build_harness() {
-    local name="$1" san="$2" suffix="$3"
-    echo "  building ${name}${suffix}  (-fsanitize=${san})"
-    clang -g -O1 -fno-omit-frame-pointer \
-          -fsanitize="$san" \
-          -fsanitize-coverage=trace-cmp,trace-div,trace-gep \
-          -Wall -Wextra \
-          $INCLUDES \
+    local name="$1" nolink="$2" link="$3" suffix="$4"
+    build_core "$nolink" "$suffix" || return 1
+    echo "  linking ${name}${suffix}  (-fsanitize=${link})"
+    clang -c $BASE_CFLAGS -fsanitize="$nolink" $COV $INCLUDES \
+          -o "$WORK/bin/${name}${suffix}.o" "$WORK/test/fuzz/${name}.c" || return 1
+    clang $BASE_CFLAGS -fsanitize="$link" \
           -o "$WORK/bin/${name}${suffix}" \
-          "$WORK/test/fuzz/${name}.c" $CORE_SRCS
+          "$WORK/bin/${name}${suffix}.o" \
+          "$WORK/bin/syncer${suffix}.o" "$WORK/bin/yyjson${suffix}.o"
 }
 
 # ---------------------------------------------------------------------------
