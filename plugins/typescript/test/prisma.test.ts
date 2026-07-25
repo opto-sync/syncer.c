@@ -152,7 +152,7 @@ export async function register() {
     await resetPrismaTable();
     await seedPrisma('ov', BASE_DOC);
     const strategy = new OverrideStrategy();
-    await sync('ov', INCOMING_RAW, extend(strategy));
+    await sync('ov', INCOMING_RAW, extend(strategy, POLICY));
     ok(strategy.calls.includes('accent'), 'override invoked for nested scalar');
     ok(strategy.calls.includes('qty'), 'override invoked inside a keyed-array element');
     const p = await readPersisted(TABLE, 'id', 'ov', 'doc');
@@ -164,7 +164,7 @@ export async function register() {
   test('merge options are forwarded: omitting the policy changes the outcome', async () => {
     await resetPrismaTable();
     await seedPrisma('noopt', BASE_DOC);
-    await sync('noopt', INCOMING_RAW, extend(new PassthroughStrategy(), undefined));
+    await sync('noopt', INCOMING_RAW, extend(new PassthroughStrategy(), undefined));  // no options at all
     const p = await readPersisted(TABLE, 'id', 'noopt', 'doc');
     equal(p.items.find((i: any) => i.id === 'a').qty, 999, 'without the policy the STALE element WINS');
     equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'without the policy FWW does not protect createdAt');

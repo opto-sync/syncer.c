@@ -16,18 +16,38 @@ export type SyncerMergeOptions = Omit<MergeOptions, 'overrideCb'>;
  *                arrayMatchKeys, maxDepth, detectCircularRefs,
  *                resolveByTimestamp, lwwKeys, fwwKeys) forwarded to the C core.
  */
+/** Advanced knobs for the Prisma extension's write path. */
+export interface SyncerExtensionConfig {
+  /**
+   * How many times to retry when a concurrent writer wins the compare-and-set.
+   * Each retry waits a jittered exponential backoff. Raise this if many writers
+   * contend for the same row. Default 10.
+   */
+  maxRetries?: number;
+  /**
+   * Your generated client's `Prisma.DbNull`.
+   *
+   * Only needed when the JSON column is NULLABLE. Prisma cannot express
+   * "this field is still SQL NULL" as a filter without that sentinel (plain
+   * `null` matches nothing, and `@prisma/client/extension` does not re-export
+   * it), so if it is omitted the compare-and-set is SKIPPED for rows whose
+   * value is currently NULL and a plain `update` is used instead. That leaves a
+   * narrow lost-update window on the NULL -> first-document transition only.
+   *
+   *   import { Prisma } from '@prisma/client';
+   *   withSyncer('Doc', 'doc', strategy, POLICY, { dbNull: Prisma.DbNull })
+   */
+  dbNull?: unknown;
+}
+
 export function withSyncer(
   modelName: string,
   fieldName: string,
   strategy: BaseMergeStrategy<any>,
   options?: SyncerMergeOptions,
-  /**
-   * How many times to retry when a concurrent writer wins the compare-and-set.
-   * Each retry waits a jittered exponential backoff. Raise this if many writers
-   * contend for the same row.
-   */
-  maxRetries: number = 10
+  config: SyncerExtensionConfig = {}
 ) {
+  const maxRetries = config.maxRetries ?? 10;
   return Prisma.defineExtension({
     name: 'opto-sync-syncer',
     model: {

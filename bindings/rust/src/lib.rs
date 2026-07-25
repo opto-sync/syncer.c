@@ -127,9 +127,14 @@ pub fn try_merge_json_with_options(
         if ptr.is_null() {
             return None;
         }
-        let res = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+        // Strict UTF-8, not `to_string_lossy`: lossy conversion would replace
+        // undecodable bytes with U+FFFD and hand back a silently corrupted
+        // document. Inputs are `&str` (already valid UTF-8) and JSON is
+        // UTF-8 by definition, so this branch should be unreachable — report
+        // it as a failure rather than fabricate a plausible-looking result.
+        let res = CStr::from_ptr(ptr).to_str().map(str::to_owned).ok();
         syncer_free(ptr as *mut c_void);
-        Some(res)
+        res
     }
 }
 
