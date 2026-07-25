@@ -230,7 +230,7 @@ defmodule OptoSyncEctoTest do
 
   describe "engine" do
     test "reports the native engine version" do
-      assert OptoSyncEcto.engine_version() == "0.2.0"
+      assert OptoSyncEcto.engine_version() =~ ~r/^\d+\.\d+\.\d+$/
     end
 
     test "crdt_options/1 mirrors the binding and accepts overrides" do

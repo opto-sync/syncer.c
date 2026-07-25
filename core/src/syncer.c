@@ -1086,5 +1086,5 @@ void syncer_free(void* ptr) {
 }
 
 const char* syncer_version(void) {
-    return "0.2.0";
+    return "0.2.1";
 }

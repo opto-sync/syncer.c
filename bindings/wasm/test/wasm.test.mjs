@@ -28,9 +28,12 @@ await initSyncer();
 /*  Init / identity                                                    */
 /* ------------------------------------------------------------------ */
 
-test('version() reports the v0.2.0 core', () => {
+test('version() reports a >=0.2.1 core', () => {
   assert.match(version(), /^\d+\.\d+\.\d+$/);
-  assert.strictEqual(version(), '0.2.0');
+  // Asserted as a lower bound so a patch bump does not fail the suite, but a
+  // stale/mismatched core still does.
+  const [maj, min, patch] = version().split('.').map(Number);
+  assert.ok(maj > 0 || min > 2 || (min === 2 && patch >= 1), `unexpected core version ${version()}`);
 });
 
 test('initSyncer is idempotent and does not re-instantiate', async () => {

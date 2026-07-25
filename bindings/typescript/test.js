@@ -83,7 +83,8 @@ t('reentrant mergeJson inside an override keeps both callbacks intact', () => {
 t('version() reports the core library version', () => {
   const v = version();
   assert.match(v, /^\d+\.\d+\.\d+$/);
-  assert.strictEqual(v, '0.2.0');
+  const [maj, min, patch] = v.split('.').map(Number);
+  assert.ok(maj > 0 || min > 2 || (min === 2 && patch >= 1), `unexpected core version ${v}`);
 });
 
 t('ArrayStrategy constant map matches the C enum', () => {

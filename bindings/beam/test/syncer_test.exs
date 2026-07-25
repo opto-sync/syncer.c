@@ -15,7 +15,8 @@ defmodule SyncerTest do
 
   describe "version/0" do
     test "reports the statically linked core version" do
-      assert Syncer.version() == "0.2.0"
+      assert [maj, min, patch] = Syncer.version() |> String.split(".") |> Enum.map(&String.to_integer/1)
+      assert maj > 0 or min > 2 or (min == 2 and patch >= 1)
       assert [_maj, _min, _patch] = String.split(Syncer.version(), ".")
     end
   end
