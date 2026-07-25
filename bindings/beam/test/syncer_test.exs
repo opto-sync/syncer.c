@@ -266,6 +266,19 @@ defmodule SyncerTest do
       assert Syncer.merge(~s({"a":1}), "{\"b\":\"x\0y\"}") == {:error, :merge_failed}
     end
 
+    test "a binary that is not valid UTF-8 fails instead of raising" do
+      # A corrupt blob out of a database is bad data, not a bad call: JSON is
+      # UTF-8 by definition, so this is just invalid JSON.
+      assert Syncer.merge(<<0xFF, 0xFE>>, "{}") == {:error, :merge_failed}
+      assert Syncer.merge("{}", <<0xFF, 0xFE>>) == {:error, :merge_failed}
+      assert Syncer.merge(<<?{, ?", 0xC3, ?">>, "{}") == {:error, :merge_failed}
+    end
+
+    test "valid multi-byte UTF-8 round-trips" do
+      assert {:ok, json} = Syncer.merge(~s({"a":"日本"}), ~s({"b":"café ☕"}))
+      assert Jason.decode!(json) == %{"a" => "日本", "b" => "café ☕"}
+    end
+
     test "merge!/3 raises Syncer.MergeError on bad input" do
       assert_raise Syncer.MergeError, fn -> Syncer.merge!("{oops", "{}") end
       assert Syncer.merge!(~s({"a":1}), ~s({"b":2})) =~ ~s("b":2)
