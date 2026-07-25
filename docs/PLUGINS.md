@@ -419,8 +419,22 @@ mergeJson('{"updatedAt":"2026-06-01","keep":1}',
 ```
 
 **A root-level `updatedAt` therefore gates the whole document**, and a
-root-level `createdAt` under FWW freezes it against any later write. Put
-timestamps at the level whose reconciliation you actually want — typically on
+root-level `createdAt` under FWW freezes it against any later write — which is
+the sharper half of this trap, since a node is vetoed by an FWW key for being
+**newer**:
+
+```js
+mergeJson('{"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}',
+          '{"doc":{"createdAt":200,"updatedAt":999999,"v":"NEWEST WRITE"}}',
+          { ...POLICY, fwwKeys: 'createdAt' })
+// -> {"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}   ← the newest write is gone
+```
+
+Once a replica holds a later `createdAt` for a record it can never write to that
+record again, and the write still reports success. That is why `createdAt` is
+not in the canonical policy.
+
+Put timestamps at the level whose reconciliation you actually want — typically on
 each keyed array element and on each independently-editable subtree. This is why
 `plugins/typescript/test/fixtures.ts` deliberately keeps the root free of
 timestamp keys.
