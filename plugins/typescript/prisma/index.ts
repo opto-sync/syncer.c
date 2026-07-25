@@ -21,8 +21,12 @@ export function withSyncer(
   fieldName: string,
   strategy: BaseMergeStrategy<any>,
   options?: SyncerMergeOptions,
-  /** How many times to retry when a concurrent writer wins the CAS. */
-  maxRetries: number = 5
+  /**
+   * How many times to retry when a concurrent writer wins the compare-and-set.
+   * Each retry waits a jittered exponential backoff. Raise this if many writers
+   * contend for the same row.
+   */
+  maxRetries: number = 10
 ) {
   return Prisma.defineExtension({
     name: 'opto-sync-syncer',
