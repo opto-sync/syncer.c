@@ -326,10 +326,14 @@ let merged: serde_json::Value = reconcile_values(&current_value, &incoming_value
 
 `ReconcileOptions` fields: `array_strategy`, `array_match_keys`,
 `resolve_by_timestamp`, `lww_keys`, `fww_keys`, `max_depth`. Note the defaults
-are **not** `MergeOptions::default()` from `syncer-rs` — they are the canonical
-CRDT policy (`MergeByKey` on `"id"`, timestamps on, `updatedAt,syncedAt` LWW,
-`createdAt` FWW). `detect_circular_refs` is hard-coded `false` and there is no
-override-callback surface (the Rust binding has none).
+are **not** `MergeOptions::default()` from `syncer-rs` — they are the CRDT
+policy (`MergeByKey` on `"id"`, timestamps on, `updatedAt,syncedAt` LWW).
+`detect_circular_refs` is hard-coded `false` and there is no override-callback
+surface (the Rust binding has none).
+
+⚠️ These crates still default `fww_keys` to `"createdAt"`, which the canonical
+policy no longer does — see [Why there is no FWW key](#why-there-is-no-fww-key).
+Set `fww_keys: String::new()` explicitly until they are migrated.
 
 Failure is `Err(ReconcileError::InvalidJson)` — one variant, covering invalid
 JSON, an interior NUL byte, and a result that will not deserialize.
