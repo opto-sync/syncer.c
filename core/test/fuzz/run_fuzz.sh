@@ -213,6 +213,16 @@ fi
 #  MODE: fuzz / all
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "all" ] || [ "$MODE" = "fuzz" ]; then
+    # Seed corpora are deterministic output of gen_corpus.py, so they are
+    # generated on demand rather than tracked (1188 reproducible files is repo
+    # noise). Regenerating is idempotent and takes under a second.
+    if ! ls -d "$FUZZ_SRC"/corpus_* >/dev/null 2>&1; then
+        banner "GENERATE seed corpora"
+        python3 "$FUZZ_SRC/gen_corpus.py" || {
+            echo "seed generation failed; fuzzing from an empty corpus instead" >&2
+        }
+    fi
+
     banner "BUILD harnesses"
     for h in $HARNESSES; do
         build_harness "$h" "fuzzer-no-link,address,undefined" "fuzzer,address,undefined" "_asan_ubsan" || FAILED=1
