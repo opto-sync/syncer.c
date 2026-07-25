@@ -1,7 +1,7 @@
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub enum ArrayMergeStrategy {
     Replace = 0,

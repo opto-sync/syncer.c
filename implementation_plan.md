@@ -78,3 +78,29 @@ syncer.c/
 2. **Core Prototype:** Write a basic C implementation. (Done)
 3. **Binding Tests:** Write tests in Rust (Done), TS, Dart, Go, and Elixir that call the C library.
 4. **Enforced Class Tests:** Write tests to show that the respective compilers/type-checkers throw errors if the required merge overrides are missing.
+
+---
+
+## Status update (2026-07-24)
+
+Core `libsyncer` is at **v0.2.0** (`syncer_version()`):
+
+- Iterative (heap-stack) deep merge — no C-stack recursion; tested to 1000 levels.
+- Array strategies: `REPLACE`, `APPEND`, `UNION`, `MERGE_BY_INDEX`, and new
+  **`MERGE_BY_KEY`** — reconciles objects-in-arrays by identity keys
+  (`array_match_keys`, default `"id"`), deep-merging matched pairs with
+  per-element CRDT timestamp resolution (`lww_keys` e.g. `updatedAt,syncedAt`;
+  `fww_keys` e.g. `createdAt`), appending unmatched incoming elements, keeping
+  existing-only elements, and treating scalars as a union so repeated syncs
+  are idempotent.
+- Test suites: `make` runs 34 unit tests plus randomized property tests
+  (idempotency, always-valid output, corruption robustness); `make sanitize`
+  runs both under ASan+UBSan.
+- Documented out-of-contract inputs: duplicate object keys; duplicate identity
+  values within a single array.
+
+Client libraries moved to the sibling repo `../opto-sync-clients`
+(`clients/{dart,ts,rust}`) — external projects import those; they consume this
+repo's bindings and never reimplement merge logic. The former `clients/wasm`
+was a misnomer (Node-API TS client) and now lives at `clients/ts`; a true WASM
+build remains an open item, as does the BEAM NIF (design doc only).
