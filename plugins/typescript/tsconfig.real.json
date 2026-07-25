@@ -1,0 +1,32 @@
+{
+  /* Type-checks the plugins against the REAL ORM packages from node_modules,
+     plus the integration test suite.
+
+     The ambient stubs in types/ are deliberately EXCLUDED: an ambient
+     `declare module 'kysely'` shadows the real package, so leaving them in would
+     silently re-check against the stubs and prove nothing about the real API.
+     Run `npm run typecheck:stubs` for the no-dependencies check. */
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "types": ["node"]
+  },
+  "include": [
+    "drizzle",
+    "prisma",
+    "kysely",
+    "typeorm",
+    "test"
+  ],
+  "exclude": [
+    "types",
+    "node_modules"
+  ]
+}

@@ -38,6 +38,7 @@ const CLIENT_DIR = path.resolve(__dirname, '../node_modules/.prisma/opto-sync-te
 
 let prisma: any;
 let xprisma: any;
+let PrismaNS: any;
 
 /** Reports whether the generated client is available. */
 export function available(): boolean {
@@ -51,7 +52,8 @@ export function available(): boolean {
 
 async function resetPrismaTable() {
   await exec(`drop table if exists ${TABLE}`);
-  await exec(`create table ${TABLE} (id text primary key, doc jsonb not null, label text)`);
+  // `doc` is nullable so the SQL-NULL handling path is testable.
+  await exec(`create table ${TABLE} (id text primary key, doc jsonb, label text)`);
 }
 
 async function seedPrisma(id: string, doc: unknown) {
@@ -68,7 +70,9 @@ export async function register() {
     return;
   }
 
-  const { PrismaClient } = createRequire(__filename)(CLIENT_DIR);
+  const generated = createRequire(__filename)(CLIENT_DIR);
+  const { PrismaClient } = generated;
+  PrismaNS = generated.Prisma; // the generated namespace, source of DbNull
   prisma = new PrismaClient();
 
   // NB: opts is passed positionally with no default — a default here would turn
