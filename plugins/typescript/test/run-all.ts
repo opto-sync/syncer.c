@@ -20,6 +20,7 @@ async function main() {
   if (want('drizzle')) mods.push(['drizzle', await import('./drizzle.test')]);
   if (want('kysely')) mods.push(['kysely', await import('./kysely.test')]);
   if (want('typeorm')) mods.push(['typeorm', await import('./typeorm.test')]);
+  if (want('prisma')) mods.push(['prisma', await import('./prisma.test')]);
 
   try {
     for (const [, m] of mods) {
@@ -35,7 +36,7 @@ async function main() {
       }
     }
     // leave the schema clean
-    for (const t of ['drizzle_docs', 'kysely_docs', 'typeorm_docs']) {
+    for (const t of ['drizzle_docs', 'kysely_docs', 'typeorm_docs', 'prisma_docs']) {
       await exec(`drop table if exists "${t}"`).catch(() => {});
     }
     await closeRawPool();
