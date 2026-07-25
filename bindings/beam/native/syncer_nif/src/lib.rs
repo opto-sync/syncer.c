@@ -70,13 +70,32 @@ impl From<RawOptions> for MergeOptions {
 /// could not produce a result (invalid JSON on either side, an interior NUL
 /// byte, or allocation failure). Never returns an empty binary as a stand-in
 /// for failure and never raises for ordinary bad input.
+///
+/// The inputs are taken as `Binary`, not `String`: rustler's `String` decoder
+/// raises `ArgumentError` on a binary that is not valid UTF-8, and a corrupt
+/// blob out of a database is bad *data*, not a bad *call*. JSON is defined to
+/// be UTF-8 (RFC 8259 §8.1), so non-UTF-8 input is simply invalid JSON here.
 #[rustler::nif(schedule = "DirtyCpu")]
-fn merge<'a>(env: Env<'a>, base: String, incoming: String, opts: RawOptions) -> Term<'a> {
+fn merge<'a>(
+    env: Env<'a>,
+    base: Binary<'a>,
+    incoming: Binary<'a>,
+    opts: RawOptions,
+) -> Term<'a> {
+    let failed = || (atoms::error(), atoms::merge_failed()).encode(env);
+
+    let (Ok(base), Ok(incoming)) = (
+        std::str::from_utf8(base.as_slice()),
+        std::str::from_utf8(incoming.as_slice()),
+    ) else {
+        return failed();
+    };
+
     let opts: MergeOptions = opts.into();
 
-    match syncer_rs::try_merge_json_with_options(&base, &incoming, &opts) {
+    match syncer_rs::try_merge_json_with_options(base, incoming, &opts) {
         Some(merged) => (atoms::ok(), merged).encode(env),
-        None => (atoms::error(), atoms::merge_failed()).encode(env),
+        None => failed(),
     }
 }
 
