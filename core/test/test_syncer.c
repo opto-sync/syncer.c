@@ -880,6 +880,74 @@ static void test_union_idempotent_after_reorder(void) {
 /*  Main                                                                      */
 /* ========================================================================== */
 
+/* ========================================================================== */
+/*  Test: keys containing an escaped NUL are not truncated or aliased         */
+/*        (regression — found while building the libFuzzer harnesses)         */
+/* ========================================================================== */
+
+static void test_nul_in_key_not_truncated(void) {
+    /* RFC 8259 permits the escape sequence for code point zero inside a string, and yyjson parses
+       such keys with a length that spans the embedded byte. The engine used to
+       look keys up and recreate them with strlen(), truncating there. Three
+       distinct corruptions followed; all cases below must now round-trip. */
+
+    /* 1. Copy of a v2-only key must keep its full length, not truncate. */
+    char* r = syncer_merge_json("{}", "{\"a\\u0000b\":1}", NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"a\\u0000b\":1") != NULL);
+    assert(strcmp(r, "{\"a\":1}") != 0);
+    syncer_free(r);
+
+    /* 2. Two keys sharing the prefix before the escape stay distinct instead
+          of collapsing onto one truncated key. */
+    r = syncer_merge_json("{\"a\\u0000b\":1}", "{\"a\\u0000c\":2}", NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"a\\u0000b\":1") != NULL);
+    assert(strstr(r, "\"a\\u0000c\":2") != NULL);
+    syncer_free(r);
+
+    /* 3. The worst symptom: the incoming long key aliased onto the unrelated
+          existing key "a", overwriting its value AND dropping the real key. */
+    r = syncer_merge_json("{\"a\":1}", "{\"a\\u0000b\":2}", NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"a\":1") != NULL);          /* untouched */
+    assert(strstr(r, "\"a\\u0000b\":2") != NULL);  /* added, not aliased */
+    syncer_free(r);
+
+    /* 4. Same key on both sides deep-merges rather than duplicating. */
+    r = syncer_merge_json("{\"k\\u0000x\":{\"p\":1}}",
+                          "{\"k\\u0000x\":{\"q\":2}}", NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"p\":1") != NULL);
+    assert(strstr(r, "\"q\":2") != NULL);
+    {   /* exactly one occurrence of the key in the output */
+        const char* first = strstr(r, "k\\u0000x");
+        assert(first != NULL);
+        assert(strstr(first + 1, "k\\u0000x") == NULL);
+    }
+    syncer_free(r);
+
+    /* 5. MERGE_BY_KEY identity keys are already length-correct; confirm the
+          array path agrees with the object path. */
+    {
+        syncer_merge_options_t opts = syncer_default_options();
+        opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+        char* r2 = syncer_merge_json_ex(
+            "{\"a\":[{\"id\":\"x\\u0000y\",\"v\":1}]}",
+            "{\"a\":[{\"id\":\"x\\u0000y\",\"v\":2}]}", &opts);
+        assert(r2 != NULL);
+        assert(json_has_num(r2, "v", 2));
+        assert(strstr(r2, "},{") == NULL); /* matched, not duplicated */
+        syncer_free(r2);
+    }
+
+    /* Control: escaped NULs inside *values* were always handled correctly. */
+    r = syncer_merge_json("{}", "{\"k\":\"x\\u0000y\"}", NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"x\\u0000y\"") != NULL);
+    syncer_free(r);
+}
+
 int main(void) {
     printf("\n=== syncer.c test suite ===\n\n");
 
@@ -923,6 +991,7 @@ int main(void) {
     TEST(test_union_dedup_key_order_independent);
     TEST(test_union_dedup_semantics);
     TEST(test_union_idempotent_after_reorder);
+    TEST(test_nul_in_key_not_truncated);
 
     printf("\n=== Results: %d/%d passed ===\n\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
