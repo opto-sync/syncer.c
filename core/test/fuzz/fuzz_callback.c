@@ -51,13 +51,14 @@ static char* cb_ex(const char* json_path, const char* val1, const char* val2) {
         case 4:
             return fz_strdup("");              /* empty -> parse failure */
         case 5: {
-            /* Echo the JSON path back as a value: makes the path buffer's
-             * contents observable, so a stale/truncated path shows up as a
-             * changed output rather than being silently invisible. */
-            size_t n = strlen(json_path) + 32;
-            char* s = (char*)malloc(n);
-            if (s) snprintf(s, n, "{\"p\":\"%s\"}", "path-elided");
-            (void)json_path;
+            /* Encode the path's LENGTH into the result rather than the path
+             * text: it makes stale or truncated path bookkeeping show up as a
+             * differing output, without needing to JSON-escape whatever bytes
+             * the fuzzer put in the key names. Reading json_path here is also
+             * what makes ASan check the path buffer for over-reads. */
+            size_t plen = strlen(json_path);
+            char* s = (char*)malloc(48);
+            if (s) snprintf(s, 48, "{\"plen\":%zu}", plen);
             return s;
         }
         case 6:

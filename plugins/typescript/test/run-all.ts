@@ -2,7 +2,7 @@
  * Integration test runner for the opto-sync ORM plugins.
  *
  * Requires a reachable Postgres (see OPTO_SYNC_TEST_PG, default
- * postgres://test:test@localhost:55432/plugintest).
+ * postgres://test:test@127.0.0.1:55987/plugintest).
  */
 import { waitForPostgres, runQueued, report, closeRawPool, exec } from './harness';
 

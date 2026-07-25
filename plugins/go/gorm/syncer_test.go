@@ -2,7 +2,7 @@
 //
 // Run with a throwaway Postgres, e.g.:
 //
-//	docker run -d --name plugintest-pg -p 55432:5432 \
+//	docker run -d --name plugintest-pg -p 127.0.0.1:55987:5432 \
 //	  -e POSTGRES_PASSWORD=test -e POSTGRES_USER=test -e POSTGRES_DB=plugintest \
 //	  postgres:16-alpine
 //	go test ./... -v
@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-const defaultDSN = "host=localhost port=55432 user=test password=test dbname=plugintest sslmode=disable"
+const defaultDSN = "host=127.0.0.1 port=55987 user=test password=test dbname=plugintest sslmode=disable"
 
 // canonicalOptions is the merge policy used across every opto-sync binding.
 func canonicalOptions() syncer.Options {
