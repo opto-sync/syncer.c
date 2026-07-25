@@ -228,4 +228,4 @@ in the glue, and the 5,000-iteration leak check.
 
 Cross-engine equivalence against the native addon (byte-identical output on a
 shared corpus) is asserted from the TypeScript client, which depends on both:
-see `opto-sync-clients/clients/ts/test/engine-parity.test.js`.
+see `opto-sync-clients/clients/ts/test/engine-parity.test.mjs`.
