@@ -920,6 +920,9 @@ int main(void) {
     TEST(test_crdt_float_timestamps);
     TEST(test_crdt_int64_extremes);
     TEST(test_unicode_and_escaped_keys);
+    TEST(test_union_dedup_key_order_independent);
+    TEST(test_union_dedup_semantics);
+    TEST(test_union_idempotent_after_reorder);
 
     printf("\n=== Results: %d/%d passed ===\n\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

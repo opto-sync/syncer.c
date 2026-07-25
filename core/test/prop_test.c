@@ -173,6 +173,44 @@ int main(void) {
         checked++;
     }
 
+    /* P2b: idempotency holds for every strategy whose contract promises it.
+     * APPEND is excluded — concatenation is deliberately not idempotent. */
+    {
+        const syncer_array_strategy_t idem[] = {
+            SYNCER_ARRAY_REPLACE,
+            SYNCER_ARRAY_UNION,
+            SYNCER_ARRAY_MERGE_BY_INDEX,
+            SYNCER_ARRAY_MERGE_BY_KEY,
+        };
+        for (int i = 0; i < 600; i++) {
+            char* a = gen_doc();
+            char* b = gen_doc();
+            for (size_t s = 0; s < sizeof(idem) / sizeof(idem[0]); s++) {
+                syncer_merge_options_t opts = syncer_default_options();
+                opts.array_strategy = idem[s];
+                opts.resolve_by_timestamp = true;
+                opts.lww_keys = "updatedAt,syncedAt";
+                opts.fww_keys = "createdAt";
+
+                char* once = syncer_merge_json_ex(a, b, &opts);
+                assert(once && is_valid_json(once));
+                char* twice = syncer_merge_json_ex(once, b, &opts);
+                assert(twice && is_valid_json(twice));
+                if (strcmp(once, twice) != 0) {
+                    fprintf(stderr,
+                            "\nIDEMPOTENCY VIOLATION (strategy %d, iter %d)\n"
+                            "  a=%s\n  b=%s\n  once=%s\n  twice=%s\n",
+                            (int)idem[s], i, a, b, once, twice);
+                    return 1;
+                }
+                syncer_free(once);
+                syncer_free(twice);
+            }
+            free(a);
+            free(b);
+        }
+    }
+
     /* P4: every strategy terminates and yields valid JSON */
     for (int i = 0; i < 500; i++) {
         char* a = gen_doc();
