@@ -581,6 +581,8 @@ callbacks needs a registry plus `cgo.Handle` and costs far more than the merge.
   core default `updatedAt`.
 - `Options.ArrayStrategy` is passed through unvalidated; an out-of-range value
   reaches the C enum.
+- `C.CString` truncates at an interior NUL byte, so a document containing one is
+  silently shortened rather than rejected (see the failure section).
 - Struct-level thread safety: the `syncer_merge_json_ex` path is stateless, and
   `concurrency_test.go` runs 100 goroutines × 100 merges under `-race` asserting
   byte-identical output.
