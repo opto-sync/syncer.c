@@ -686,6 +686,112 @@ static void test_version_string(void) {
 }
 
 /* ========================================================================== */
+/*  Test: float timestamps participate in CRDT resolution                     */
+/* ========================================================================== */
+
+static void test_crdt_float_timestamps(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt";
+
+    /* Fractional epoch seconds (Python time.time() style): base newer. */
+    const char* j1 = "{\"doc\":{\"updatedAt\":1689940800.9,\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":1689940800.1,\"val\":\"stale\"}}";
+    char* r1 = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r1 != NULL);
+    assert(json_has_str(r1, "val", "base"));
+    syncer_free(r1);
+
+    /* Incoming fractional stamp newer -> accepted. */
+    char* r2 = syncer_merge_json_ex(j2, j1, &opts);
+    assert(r2 != NULL);
+    assert(json_has_str(r2, "val", "base")); /* "base" is incoming here */
+    syncer_free(r2);
+
+    /* Mixed int-vs-real still resolves: int 100 vs real 99.5 -> base newer. */
+    const char* j3 = "{\"doc\":{\"updatedAt\":100,\"val\":\"base\"}}";
+    const char* j4 = "{\"doc\":{\"updatedAt\":99.5,\"val\":\"stale\"}}";
+    char* r3 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r3 != NULL);
+    assert(json_has_str(r3, "val", "base"));
+    syncer_free(r3);
+
+    /* Real-vs-int, incoming newer -> accepted. */
+    const char* j5 = "{\"doc\":{\"updatedAt\":99.5,\"val\":\"old\"}}";
+    const char* j6 = "{\"doc\":{\"updatedAt\":100,\"val\":\"new\"}}";
+    char* r4 = syncer_merge_json_ex(j5, j6, &opts);
+    assert(r4 != NULL);
+    assert(json_has_str(r4, "val", "new"));
+    syncer_free(r4);
+
+    /* Per-element inside MERGE_BY_KEY arrays. */
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j7 = "{\"a\":[{\"id\":1,\"updatedAt\":200.75,\"v\":\"keep\"}]}";
+    const char* j8 = "{\"a\":[{\"id\":1,\"updatedAt\":200.25,\"v\":\"stale\"}]}";
+    char* r5 = syncer_merge_json_ex(j7, j8, &opts);
+    assert(r5 != NULL);
+    assert(json_has_str(r5, "v", "keep"));
+    syncer_free(r5);
+}
+
+/* ========================================================================== */
+/*  Test: int64 extremes and negative timestamps compare exactly              */
+/* ========================================================================== */
+
+static void test_crdt_int64_extremes(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "updatedAt";
+
+    /* Nanosecond epochs near int64 range: differ only in the low digit, which
+       a double comparison would lose. Base is newer by 1ns -> stale rejected. */
+    const char* j1 = "{\"doc\":{\"updatedAt\":1689940800123456789,\"val\":\"base\"}}";
+    const char* j2 = "{\"doc\":{\"updatedAt\":1689940800123456788,\"val\":\"stale\"}}";
+    char* r1 = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r1 != NULL);
+    assert(json_has_str(r1, "val", "base"));
+    syncer_free(r1);
+
+    /* Negative timestamps (pre-1970) order correctly: -100 < -50. */
+    const char* j3 = "{\"doc\":{\"updatedAt\":-50,\"val\":\"base\"}}";
+    const char* j4 = "{\"doc\":{\"updatedAt\":-100,\"val\":\"stale\"}}";
+    char* r2 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r2 != NULL);
+    assert(json_has_str(r2, "val", "base"));
+    syncer_free(r2);
+}
+
+/* ========================================================================== */
+/*  Test: unicode + escaped keys survive merge and path building              */
+/* ========================================================================== */
+
+static void test_unicode_and_escaped_keys(void) {
+    /* Multibyte keys, escaped quotes and dots in keys — merge must neither
+       corrupt them nor confuse path bookkeeping. */
+    const char* j1 = "{\"héllo\":{\"wörld\":1},\"a.b\":{\"c\":1},\"q\\\"k\":1}";
+    const char* j2 = "{\"héllo\":{\"wörld\":2,\"日本\":3},\"a.b\":{\"d\":4},\"q\\\"k\":9}";
+    char* r = syncer_merge_json(j1, j2, NULL);
+    assert(r != NULL);
+    assert(strstr(r, "\"wörld\":2") != NULL);
+    assert(strstr(r, "\"日本\":3") != NULL);
+    assert(strstr(r, "\"c\":1") != NULL);
+    assert(strstr(r, "\"d\":4") != NULL);
+    assert(strstr(r, "\"q\\\"k\":9") != NULL);
+    syncer_free(r);
+
+    /* String identity values with unicode match correctly in MERGE_BY_KEY. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
+    const char* j3 = "{\"a\":[{\"id\":\"ключ\",\"v\":1}]}";
+    const char* j4 = "{\"a\":[{\"id\":\"ключ\",\"v\":2}]}";
+    char* r2 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r2 != NULL);
+    assert(json_has_num(r2, "v", 2));
+    assert(strstr(r2, "},{") == NULL); /* matched, not duplicated */
+    syncer_free(r2);
+}
+
+/* ========================================================================== */
 /*  Main                                                                      */
 /* ========================================================================== */
 
