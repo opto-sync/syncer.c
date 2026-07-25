@@ -1,0 +1,45 @@
+{
+  "name": "@opto-sync/syncer-wasm",
+  "version": "0.2.0",
+  "description": "The syncer.c CRDT merge engine compiled to WebAssembly — runs in browsers, web workers, Node and Deno with no native addon",
+  "type": "module",
+  "main": "./index.mjs",
+  "module": "./index.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    },
+    "./split": {
+      "types": "./split.d.ts",
+      "default": "./split.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "split.mjs",
+    "split.d.ts",
+    "lib/",
+    "dist/",
+    "src/",
+    "build.sh",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node --test test/wasm.test.mjs"
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "crdt",
+    "json",
+    "merge",
+    "sync",
+    "offline-first"
+  ],
+  "license": "MIT"
+}
