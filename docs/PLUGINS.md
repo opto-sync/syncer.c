@@ -14,20 +14,44 @@ because the data loss is silent.
 
 ## The canonical policy
 
-Every binding and plugin uses the same option set:
-
 | Option | Value |
 |---|---|
 | array strategy | `MERGE_BY_KEY` (4) |
 | array match keys | `"id"` |
 | resolve by timestamp | `true` |
 | LWW keys | `"updatedAt,syncedAt"` |
-| FWW keys | `"createdAt"` |
+| FWW keys | *(unset)* |
 
 Spelled per language: `POLICY` in `plugins/typescript/test/fixtures.ts`,
 `ReconcileOptions::default()` in the three Rust crates, `canonicalOptions()` in
 `plugins/go/gorm/syncer_test.go`, `Syncer.crdt_options/0` (re-exported as
 `OptoSyncEcto.crdt_options/1`) on the BEAM.
+
+### Why there is no FWW key
+
+`"createdAt"` used to be the canonical FWW key. It was removed because
+first-write-wins is a **node-level veto**, not protection of the `createdAt`
+field: an incoming node whose FWW key is newer than the base's is discarded
+**wholesale**, regardless of how new its `updatedAt` is.
+
+```
+base     {"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}
+incoming {"doc":{"createdAt":200,"updatedAt":999999,"v":"NEWEST WRITE"}}
+result   {"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}
+```
+
+Under that policy, **any replica that ends up holding a later `createdAt` for a
+record can never write to that record again** — permanently, silently, behind a
+successful response. Two devices creating the same id offline is enough. Set
+`fww_keys` only when "the first writer owns this whole node, forever" is the
+semantics you actually want. Full write-up in
+[`MERGE_SEMANTICS.md`](./MERGE_SEMANTICS.md#timestamp-resolution-lww--fww).
+
+> **Divergence to be aware of.** The opto-sync clients (TypeScript, Dart, Rust)
+> and all five opto-sync servers ship this policy today. Several plugin
+> defaults and test fixtures under `plugins/` still spell `FwwKeys:
+> "createdAt"` and have not been migrated yet; treat the table above as the
+> policy you should configure, and check the plugin you are using.
 
 ## Inventory
 
