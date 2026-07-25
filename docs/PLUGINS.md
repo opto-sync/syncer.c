@@ -533,10 +533,19 @@ results unstable.
 - **LWW on `updatedAt,syncedAt`** rejects a stale client write per record instead
   of per document. Two keys, because `updatedAt` is the application's edit clock
   and `syncedAt` is the transport's; a key participates only when **both** sides
-  carry it, so listing both is free.
-- **FWW on `createdAt`** protects the original creation record: an incoming
-  element with a *newer* `createdAt` is a re-creation attempt and loses. Without
-  it, a client replaying an old create can rewrite provenance.
+  carry it, so a document that never writes `syncedAt` is unaffected by its
+  presence in the list. That is *not* the same as free: the keys are an **OR of
+  vetoes**, so on a node that carries both, a `syncedAt` that says "the base is
+  newer" rejects the write even when `updatedAt` says the incoming one is. List
+  a key only if you want it to be able to veto on its own.
+- **No FWW key.** "FWW on `createdAt` protects the original creation record" is
+  the intuition, and it is wrong: FWW is a node-level veto, so an element whose
+  `createdAt` is newer is dropped *entirely* — its `updatedAt`, its edits, all of
+  it — and the replica that holds that `createdAt` can never write to the record
+  again. See [Why there is no FWW key](#why-there-is-no-fww-key). If you need
+  tamper-evident provenance, enforce `createdAt` immutability where you own the
+  write path (a DB trigger, or by stripping it from incoming payloads), not with
+  a merge-time veto.
 - **Idempotency**: with this policy, re-applying the same payload converges
   (`merge(merge(a,b), b) == merge(a,b)`), which is what makes a retried sync
   safe. Every plugin suite asserts it, and the core's `prop_test.c` asserts it
