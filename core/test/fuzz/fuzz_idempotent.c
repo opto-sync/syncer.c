@@ -92,6 +92,7 @@ static bool in_contract(yyjson_val* v, int depth) {
         yyjson_val* keys[64];
         if (n > 64) return false; /* keep the filter cheap */
         while ((k = yyjson_obj_iter_next(&it))) {
+            if (i >= 64) return false;  /* never trust the size against the array */
             for (size_t j = 0; j < i; j++) {
                 size_t lk = yyjson_get_len(k), lj = yyjson_get_len(keys[j]);
                 if (lk == lj &&
@@ -106,10 +107,11 @@ static bool in_contract(yyjson_val* v, int depth) {
     }
 
     if (yyjson_is_arr(v)) {
-        /* Duplicate identities under the match key "id"? Also reject arrays
-         * holding duplicate *whole* elements, because UNION dedups them and
-         * MERGE_BY_INDEX does not, which is a contract difference rather than
-         * a defect. */
+        /* Reject arrays carrying the same identity twice under the match key
+         * "id" — MERGE_BY_KEY binds duplicate matches to the first element, so
+         * idempotency is not promised there. Duplicate *whole* elements are
+         * fine and stay in scope: UNION dedups them and MERGE_BY_INDEX keeps
+         * them, but both are stable under re-application. */
         size_t n = yyjson_arr_size(v);
         if (n > 64) return false;
         yyjson_val* idents[64];
