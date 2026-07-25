@@ -1,0 +1,355 @@
+name: CI
+
+# Every suite in this repo used to be run by hand. This workflow runs all of
+# them on Linux (ubuntu-latest): the C core, all five language bindings, the
+# ORM plugins, and the cross-language differential harness.
+#
+# Platform note: the primary dev machine is macOS/arm64, so a few paths differ
+# here. On Linux the CMake core build produces `libsyncer.so`, not
+# `libsyncer.dylib`. Nothing below hardcodes a macOS path or extension; where a
+# checked-in script does, the workaround is called out inline.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref; a full matrix is expensive.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # core/ — 40 unit tests + randomized property tests, and the same suite again
+  # under ASan+UBSan. Matrixed so "core (sanitize)" failing is distinguishable
+  # from "core (tests)" failing at a glance.
+  # ---------------------------------------------------------------------------
+  core:
+    name: core (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: tests
+            make_goal: all
+          - target: sanitize
+            make_goal: sanitize
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cc version
+        run: cc --version
+
+      # `make all` == `make test prop`: builds and runs test/test_syncer (40
+      # assertions) then test/prop_test (randomized property tests).
+      # `make sanitize` rebuilds both with -fsanitize=address,undefined.
+      - name: core — make ${{ matrix.make_goal }}
+        working-directory: core
+        run: make ${{ matrix.make_goal }}
+
+      - name: Which suite broke
+        if: failure()
+        run: |
+          echo "::error title=syncer.c core (${{ matrix.target }}) FAILED::Reproduce with: cd core && make ${{ matrix.make_goal }}"
+
+  # ---------------------------------------------------------------------------
+  # bindings/ — one matrix leg per language so a single language failure is
+  # legible in the checks list ("bindings (go)" etc.).
+  # ---------------------------------------------------------------------------
+  bindings:
+    name: bindings (${{ matrix.lang }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lang: typescript
+            node: true
+          - lang: rust
+            rust: true
+          - lang: go
+            go: true
+          - lang: dart
+            dart: true
+            core_shared_lib: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- toolchains (only the one this leg needs) ---------------------------
+      - uses: actions/setup-node@v4
+        if: matrix.node
+        with:
+          node-version: '22'
+          # Caches ~/.npm (downloaded tarballs) only. It does NOT cache
+          # node_modules or build/Release/syncer.node, so the node-gyp addon is
+          # always recompiled from the current core C sources.
+          cache: npm
+          cache-dependency-path: bindings/typescript/package-lock.json
+
+      - uses: actions/setup-go@v5
+        if: matrix.go
+        with:
+          go-version: '1.22'
+          # DELIBERATELY DISABLED. syncer_core.c / yyjson_core.c #include the
+          # core C sources from OUTSIDE the package directory, and Go's build
+          # cache does not track those files. A restored build cache could let
+          # `go test` pass against a stale compiled core.
+          cache: false
+
+      - uses: dart-lang/setup-dart@v1
+        if: matrix.dart
+        with:
+          sdk: stable
+
+      # Rust stable ships preinstalled on ubuntu-latest, so no third-party
+      # toolchain action is needed. Only the dependency downloads are cached --
+      # never target/, which would risk a stale statically-linked core.
+      - name: Cache cargo registry (downloads only, never target/)
+        if: matrix.rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('bindings/rust/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      # --- the shared library, for the Dart FFI leg only ----------------------
+      # On Linux this writes core/build/libsyncer.so; bindings/dart/bin/test.dart
+      # calls resolveSyncerLibraryPath(directory: '../../core/build'), which
+      # picks the platform-correct name automatically.
+      - name: Build core shared library
+        if: matrix.core_shared_lib
+        run: |
+          cd core
+          mkdir -p build
+          cd build
+          cmake ..
+          make syncer
+          ls -l libsyncer.so
+
+      # --- suites ------------------------------------------------------------
+      - name: bindings/typescript — npm install (node-gyp builds the addon)
+        if: matrix.lang == 'typescript'
+        working-directory: bindings/typescript
+        run: npm install
+
+      - name: bindings/typescript — node test.js
+        if: matrix.lang == 'typescript'
+        working-directory: bindings/typescript
+        run: node test.js
+
+      - name: bindings/typescript — node test-concurrency.js
+        if: matrix.lang == 'typescript'
+        working-directory: bindings/typescript
+        run: node test-concurrency.js
+
+      - name: bindings/rust — cargo test
+        if: matrix.lang == 'rust'
+        working-directory: bindings/rust
+        run: cargo test
+
+      - name: bindings/go — go test -race ./...
+        if: matrix.lang == 'go'
+        working-directory: bindings/go
+        # -count=1 defeats Go's test result cache: with the core C sources
+        # untracked by the build cache, a cached PASS would be meaningless.
+        run: go test -race -count=1 ./...
+
+      - name: bindings/dart — dart pub get && dart bin/test.dart
+        if: matrix.lang == 'dart'
+        working-directory: bindings/dart
+        run: |
+          dart pub get
+          dart bin/test.dart
+
+      - name: Which suite broke
+        if: failure()
+        run: |
+          echo "::error title=syncer.c bindings/${{ matrix.lang }} FAILED::See the failed step above. This is the ${{ matrix.lang }} binding suite, not the C core -- core/ is covered by the 'core' job."
+
+  # ---------------------------------------------------------------------------
+  # plugins/ — ORM integration helpers. The Rust plugins have real unit tests;
+  # the TypeScript plugins are type-check only (the ORM packages are peer deps
+  # and are intentionally not installed -- plugins/typescript/types/orm-stubs.d.ts
+  # models the surface they touch); gorm is build + vet.
+  # ---------------------------------------------------------------------------
+  plugins:
+    name: plugins (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rust-diesel
+            rust: true
+            dir: plugins/rust/diesel
+          - name: rust-sqlx
+            rust: true
+            dir: plugins/rust/sqlx
+          - name: rust-seaorm
+            rust: true
+            dir: plugins/rust/seaorm
+          - name: typescript
+            node: true
+            dir: plugins/typescript
+          - name: go-gorm
+            go: true
+            dir: plugins/go/gorm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: matrix.node
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-go@v5
+        if: matrix.go
+        with:
+          go-version: '1.22'
+          # See the bindings job: the gorm plugin transitively cgo-compiles the
+          # core C sources through its replace directive on ../../../bindings/go.
+          cache: false
+
+      - name: Cache cargo registry (downloads only, never target/)
+        if: matrix.rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.dir)) }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      - name: plugins — cargo test
+        if: matrix.rust
+        working-directory: ${{ matrix.dir }}
+        run: cargo test
+
+      # `npx tsc` would resolve the unrelated deprecated "tsc" npm package;
+      # `-p typescript` forces the real compiler. plugins/typescript has no
+      # package.json, so there is nothing to install first.
+      - name: plugins/typescript — type-check (tsc --noEmit)
+        if: matrix.name == 'typescript'
+        working-directory: plugins/typescript
+        run: npx -y -p typescript@5 tsc -p tsconfig.json
+
+      - name: plugins/go/gorm — go build && go vet
+        if: matrix.name == 'go-gorm'
+        working-directory: plugins/go/gorm
+        run: |
+          go build ./...
+          go vet ./...
+
+      - name: Which suite broke
+        if: failure()
+        run: |
+          echo "::error title=syncer.c plugins/${{ matrix.name }} FAILED::The ${{ matrix.name }} ORM plugin suite broke (${{ matrix.dir }}), not the core or the bindings."
+
+  # ---------------------------------------------------------------------------
+  # test-differential/ — the strongest claim in the repo: C, TypeScript, Dart,
+  # Rust and Go produce BYTE-IDENTICAL merge output over a seeded corpus, plus a
+  # per-language and cross-language idempotency pass.
+  #
+  # ==> CACHING WARNING <==
+  # run_all.sh deliberately force-rebuilds the TS addon (mtime check against
+  # ../core/src) and the Go runner (`go build -a`), because neither node-gyp nor
+  # Go's build cache tracks the core C sources they embed. Restoring a build
+  # cache (~/.cache/go-build, node_modules/build/, */target/) into this job
+  # could make the differential test silently validate a STALE core and report
+  # five languages agreeing on last week's behavior. So this job caches NOTHING
+  # that holds compiled output: setup-go cache is off, no cargo target/ cache,
+  # and no node_modules cache. Do not "optimize" that away.
+  # ---------------------------------------------------------------------------
+  differential:
+    name: test-differential (C/TS/Dart/Rust/Go byte-identity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false   # see the CACHING WARNING above
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      # Registry index/tarballs only. Compiled artifacts are never cached.
+      - name: Cache cargo registry (downloads only, never target/)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('test-differential/rust-runner/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      # The Dart runner needs the shared core library. cmake on Linux emits
+      # core/build/libsyncer.so.
+      - name: Build core shared library
+        run: |
+          cd core
+          mkdir -p build
+          cd build
+          cmake ..
+          make syncer
+          ls -l libsyncer.so
+
+      # WORKAROUND (do not remove until run_all.sh is fixed upstream):
+      # test-differential/run_all.sh hardcodes
+      #   export SYNCER_LIB_PATH="$PWD/../core/build/libsyncer.dylib"
+      # which is macOS-only and overrides anything we export here. A symlink in
+      # the (gitignored) build dir makes the dylib name resolve to the real .so
+      # without touching the script. run_dart.dart has the same macOS-only
+      # default, also covered by this symlink.
+      - name: Symlink libsyncer.dylib -> libsyncer.so (run_all.sh hardcodes .dylib)
+        run: ln -sf libsyncer.so core/build/libsyncer.dylib
+
+      # run_all.sh calls `npm run build` in bindings/typescript, which needs
+      # node_modules/node-addon-api to exist for binding.gyp to resolve. A fresh
+      # checkout has no node_modules, so install first. This also produces a
+      # freshly compiled addon, so run_all.sh's staleness check is satisfied by
+      # an addon that genuinely matches the current core sources.
+      - name: Install bindings/typescript deps (node-gyp needs node-addon-api)
+        working-directory: bindings/typescript
+        run: npm install
+
+      - name: test-differential — ./run_all.sh
+        working-directory: test-differential
+        run: ./run_all.sh
+
+      - name: Upload differential corpus + results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: differential-artifacts
+          path: |
+            test-differential/corpus*.jsonl
+            test-differential/results*.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Which suite broke
+        if: failure()
+        run: |
+          echo "::error title=syncer.c test-differential FAILED::Cross-language byte-identity or idempotency broke. The uploaded corpus*/results* artifacts contain the diverging lines. Reproduce with: cd test-differential && ./run_all.sh"
