@@ -26,3 +26,15 @@ core/test/prop_test
 core/test/quick_test
 core/test/*_asan
 **/*.dSYM/
+
+# Differential-harness generated artifacts
+test-differential/corpus.jsonl
+test-differential/corpus-pass2*.jsonl
+test-differential/results-*.jsonl
+test-differential/run_c
+test-differential/go-runner/go-runner
+test-differential/rust-runner/target/
+test-differential/corpus2-*.jsonl
+test-differential/results2-*.jsonl
+test-differential/go-runner/run_go
+test-differential/pubspec.lock

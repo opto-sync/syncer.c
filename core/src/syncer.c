@@ -223,18 +223,135 @@ static merge_frame_t* stack_top(merge_stack_t* s) {
 /* ========================================================================== */
 
 
+/* Semantic deep equality across the mutable/immutable APIs.
+ *
+ * Object keys are compared as SETS, not as ordered text. Comparing serialized
+ * forms (the obvious shortcut) makes UNION dedup depend on key order, which no
+ * caller controls: Postgres `jsonb` renormalizes key order on every write, so
+ * a round-tripped {"id":"c","v":3} comes back as {"v":3,"id":"c"} and would
+ * never match the element it is a duplicate of — UNION would silently degrade
+ * to APPEND and lose idempotency.
+ *
+ * Iterative with an explicit heap stack, matching the merge engine: element
+ * subtrees can be arbitrarily deep and must not consume the C stack. On
+ * allocation failure it reports "not equal", which for UNION means an element
+ * may be appended twice — degraded, never corrupt.
+ */
+typedef struct {
+    yyjson_mut_val* a;
+    yyjson_val*     b;
+} eq_pair_t;
+
+typedef struct {
+    eq_pair_t* items;
+    size_t     count;
+    size_t     cap;
+    bool       oom;
+} eq_stack_t;
+
+static void eq_init(eq_stack_t* s) {
+    s->cap = 32;
+    s->count = 0;
+    s->items = (eq_pair_t*)malloc(s->cap * sizeof(eq_pair_t));
+    s->oom = (s->items == NULL);
+    if (s->oom) s->cap = 0;
+}
+
+static void eq_free(eq_stack_t* s) {
+    free(s->items);
+    s->items = NULL;
+    s->count = s->cap = 0;
+}
+
+static bool eq_push(eq_stack_t* s, yyjson_mut_val* a, yyjson_val* b) {
+    if (s->oom) return false;
+    if (s->count == s->cap) {
+        size_t cap = s->cap * 2;
+        eq_pair_t* grown = (eq_pair_t*)realloc(s->items, cap * sizeof(eq_pair_t));
+        if (!grown) {
+            s->oom = true;
+            return false;
+        }
+        s->items = grown;
+        s->cap = cap;
+    }
+    s->items[s->count].a = a;
+    s->items[s->count].b = b;
+    s->count++;
+    return true;
+}
+
+/* Integers compare exactly (nanosecond-safe); any pair involving a real
+ * compares as double, so 1 and 1.0 are the same element. */
+static bool eq_nums(yyjson_mut_val* a, yyjson_val* b) {
+    if (yyjson_mut_is_int(a) && yyjson_is_int(b)) {
+        return yyjson_mut_get_sint(a) == yyjson_get_sint(b);
+    }
+    return yyjson_mut_get_num(a) == yyjson_get_num(b);
+}
+
+static bool vals_deep_equal(yyjson_mut_val* root_a, yyjson_val* root_b) {
+    eq_stack_t st;
+    eq_init(&st);
+    bool equal = eq_push(&st, root_a, root_b);
+
+    while (equal && st.count > 0) {
+        eq_pair_t p = st.items[--st.count];
+        yyjson_mut_val* a = p.a;
+        yyjson_val*     b = p.b;
+
+        if (yyjson_mut_is_obj(a) && yyjson_is_obj(b)) {
+            if (yyjson_mut_obj_size(a) != yyjson_obj_size(b)) {
+                equal = false;
+                break;
+            }
+            yyjson_obj_iter it;
+            yyjson_obj_iter_init(b, &it);
+            yyjson_val* k;
+            while ((k = yyjson_obj_iter_next(&it))) {
+                yyjson_mut_val* va =
+                    yyjson_mut_obj_getn(a, yyjson_get_str(k), yyjson_get_len(k));
+                if (!va || !eq_push(&st, va, yyjson_obj_iter_get_val(k))) {
+                    equal = false;
+                    break;
+                }
+            }
+        } else if (yyjson_mut_is_arr(a) && yyjson_is_arr(b)) {
+            /* Arrays stay ORDER-SENSITIVE: element order is meaningful. */
+            size_t n = yyjson_mut_arr_size(a);
+            if (n != yyjson_arr_size(b)) {
+                equal = false;
+                break;
+            }
+            for (size_t i = 0; i < n; i++) {
+                if (!eq_push(&st, yyjson_mut_arr_get(a, i), yyjson_arr_get(b, i))) {
+                    equal = false;
+                    break;
+                }
+            }
+        } else if (yyjson_mut_is_str(a) && yyjson_is_str(b)) {
+            if (strcmp(yyjson_mut_get_str(a), yyjson_get_str(b)) != 0) equal = false;
+        } else if (yyjson_mut_is_num(a) && yyjson_is_num(b)) {
+            if (!eq_nums(a, b)) equal = false;
+        } else if (yyjson_mut_is_bool(a) && yyjson_is_bool(b)) {
+            if (yyjson_mut_get_bool(a) != yyjson_get_bool(b)) equal = false;
+        } else if (yyjson_mut_is_null(a) && yyjson_is_null(b)) {
+            /* both null: equal */
+        } else {
+            equal = false;
+        }
+    }
+
+    eq_free(&st);
+    return equal;
+}
+
 static bool array_contains(yyjson_mut_val* arr, yyjson_val* needle) {
     yyjson_mut_arr_iter iter;
     yyjson_mut_arr_iter_init(arr, &iter);
     yyjson_mut_val* elem;
     while ((elem = yyjson_mut_arr_iter_next(&iter))) {
-        /* Serialize both to compare */
-        char* se = yyjson_mut_val_write(elem, 0, NULL);
-        char* sn = yyjson_val_write(needle, 0, NULL);
-        bool eq = (se && sn && strcmp(se, sn) == 0);
-        free(se);
-        free(sn);
-        if (eq) return true;
+        if (vals_deep_equal(elem, needle)) return true;
     }
     return false;
 }
