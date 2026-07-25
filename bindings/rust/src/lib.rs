@@ -104,6 +104,10 @@ pub fn try_merge_json_with_options(
         Some(s) => Some(CString::new(s.as_str()).ok()?),
         None => None,
     };
+    let array_match_keys_cstr = match opts.array_match_keys.as_ref() {
+        Some(s) => Some(CString::new(s.as_str()).ok()?),
+        None => None,
+    };
 
     let c_opts = SyncerMergeOptionsC {
         override_cb: None,
