@@ -117,12 +117,21 @@ func (p *SyncerPlugin) isJSONField(field *schema.Field) bool {
 // fetchCurrent reads the currently stored raw JSON text for one column,
 // scoped by the statement's WHERE conditions (and the model's primary key
 // when set). Returns found=false when no row matches.
+//
+// The read takes a `FOR UPDATE` row lock and runs on the SAME connection as the
+// update being intercepted (Session{NewDB: true} preserves ConnPool). When the
+// caller wraps the update in a transaction, the lock therefore spans the whole
+// read-merge-write and concurrent syncs of one row serialize correctly. Outside
+// a transaction each statement is its own implicit transaction, so the lock is
+// released immediately and concurrent updates can still lose a merge — see
+// LockingCaveat in the README.
 func (p *SyncerPlugin) fetchCurrent(db *gorm.DB, column string) (string, bool, error) {
 	stmt := db.Statement
 
 	tx := db.Session(&gorm.Session{NewDB: true}).
 		Table(stmt.Table).
 		Select(column).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Limit(1)
 
 	scoped := false

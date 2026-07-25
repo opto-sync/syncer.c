@@ -150,11 +150,17 @@ run_harness() {
 
     banner "RUN ${name}${suffix} — ${secs}s  (seeds: $(ls -1 "$corpus" | wc -l))"
 
+    # -jobs/-workers only when actually parallelising: at JOBS=1 they make
+    # libFuzzer fork a worker and redirect its output to fuzz-0.log, which
+    # buries the progress lines for no benefit.
+    local par=()
+    [ "$JOBS" -gt 1 ] && par=(-jobs="$JOBS" -workers="$JOBS")
+
     "$WORK/bin/${name}${suffix}" "$corpus" \
         -dict="$WORK/test/fuzz/syncer.dict" \
         -max_total_time="$secs" \
         -max_len="$MAX_LEN" \
-        -jobs="$JOBS" -workers="$JOBS" \
+        "${par[@]}" \
         -rss_limit_mb="$RSS_LIMIT_MB" \
         -timeout=25 \
         -print_final_stats=1 \
