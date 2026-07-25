@@ -73,7 +73,10 @@ export async function register() {
   const generated = createRequire(__filename)(CLIENT_DIR);
   const { PrismaClient } = generated;
   PrismaNS = generated.Prisma; // the generated namespace, source of DbNull
-  prisma = new PrismaClient();
+  // The schema's datasource is env("OPTO_SYNC_TEST_PG"), which would be unset
+  // when the rest of the suite falls back to the harness default. Pass the DSN
+  // explicitly so Prisma always talks to the SAME database as every other suite.
+  prisma = new PrismaClient({ datasourceUrl: CONN });
 
   // NB: opts is passed positionally with no default — a default here would turn
   // an intentional `undefined` (meaning "no merge options at all") back into
