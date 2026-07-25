@@ -304,7 +304,7 @@ the substring `incoming`; **keep that invariant if you extend the pools.**
 | Dart FFI | `cd bindings/dart && dart pub get && dart bin/test.dart` | 29 PASS | 0.9 s |
 | Rust | `cd bindings/rust && cargo test` | 12 unit + 3 concurrency + 0 doc | 0.55 s |
 | Go | `cd bindings/go && go test -race -count=1 ./...` | 10 tests, race-clean | 8.6 s |
-| BEAM | `docker run --rm -v "$PWD":/src -w /src/bindings/beam opto-sync-beam-test sh -c 'mix deps.get && mix test'` (from `syncer.c/`) | 35 tests + 4 doctests | minutes (cargo release build of the NIF dominates) |
+| BEAM | `docker run --rm -v "$PWD":/src -w /src/bindings/beam opto-sync-beam-test sh -c 'mix deps.get && mix test'` (from `syncer.c/`) | 35 tests + 4 doctests, **1 failing** at time of writing ([see below](#the-beam-version-doctest)) | minutes (cargo release build of the NIF dominates) |
 
 The Dart runner needs the shared library:
 
