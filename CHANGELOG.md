@@ -15,6 +15,19 @@ repository. `syncer_version()` is the authoritative version string and returns
 
 ## [0.2.1] — 2026-07-25
 
+### Performance
+
+- `UNION` dedup no longer allocates a comparator stack per candidate comparison;
+  one scratch stack is reused across a whole scan. At 1,000 elements that removed
+  ~500k malloc/free pairs per merge and roughly **halved** `UNION`
+  (50.9 ms → 24.5 ms; 1.23 s → 0.60 s at 5,000). Output is byte-identical, as the
+  cross-language differential suite verifies. Found because WebAssembly *beat*
+  native by 3.5× on this path, which only made sense if it was allocator-bound.
+- Replacing serialize-and-`strcmp` with structural comparison (the correctness
+  fix above) was independently measured at **2.4–2.7× faster** on dedup-bound
+  work. Combined, `UNION` is roughly 4–5× faster than 0.2.0 while also being
+  correct. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
 Version reported by `syncer_version()`. Includes the two fixes that landed
 between 0.2.0 and this release (`318777c6`, `3d7e064c`) and were first shipped
 under this version number.

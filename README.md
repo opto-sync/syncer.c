@@ -115,8 +115,11 @@ Deeper layers:
 - **Zero-deserialization.** Merges operate on the raw JSON text the database
   driver already has, so a host language deserializes once, at the end, instead
   of encoding and decoding around every merge.
-- **Allocation failure is not a crash.** Growable buffers carry an `oom` flag;
-  the merge aborts and returns `NULL` rather than emitting a partial document.
+- **Allocation failure is not a crash.** The engine's own growable buffers carry
+  an `oom` flag; the merge aborts and returns `NULL` rather than emitting a
+  partial document. This covers the merge stack, path buffer, visited set and
+  comparator stack — not yyjson's internal allocations, whose return values are
+  not inspected (see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 - **`NULL` means failure, never empty.** Every binding surfaces it as
   `null`/`None`/`{:error, _}`/an exception, so an unparseable input can never be
   mistaken for a successful empty merge. (Two documented compat shims aside —

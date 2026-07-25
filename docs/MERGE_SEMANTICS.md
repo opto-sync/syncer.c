@@ -82,11 +82,50 @@ With `resolve_by_timestamp` enabled:
 - `lww_keys` (e.g. `"updatedAt,syncedAt"`) — **Last-Write-Wins**: if the base's
   timestamp is newer than the incoming one, the incoming node is rejected.
 - `fww_keys` (e.g. `"createdAt"`) — **First-Write-Wins**: if the incoming
-  timestamp is newer, the incoming node is rejected. This protects an
-  original creation record from being overwritten by a later claim.
+  timestamp is newer, the incoming node is rejected.
 
 Both accept comma-separated lists; surrounding spaces are tolerated; a key
 participates only when **both** sides carry it.
+
+The two lists are an **OR of vetoes**, not a precedence order, and neither is
+"per field": `should_reject_by_crdt_rules` consults `fww_keys` first, then
+`lww_keys`, and *any* key in *either* list that says "reject" rejects the whole
+node. Adding a key to either list can therefore only ever make more incoming
+data lose — listing a key you do not need is not free.
+
+> ### ⚠️ FWW is a node-level VETO, not field protection
+>
+> This is the trap. "First-write-wins on `createdAt`" reads like "`createdAt`
+> itself cannot be overwritten". It is not: an incoming node whose FWW key is
+> newer than the base's is discarded **wholesale**, no matter how new its LWW
+> key is.
+>
+> ```
+> base     {"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}
+> incoming {"doc":{"createdAt":200,"updatedAt":999999,"v":"NEWEST WRITE"}}
+> result   {"doc":{"createdAt":100,"updatedAt":100,"v":"base"}}
+> ```
+>
+> The incoming node is the newest write in the system by `updatedAt`, by an
+> enormous margin, and it is silently dropped. The FWW guard runs *before* the
+> LWW guard and short-circuits it.
+>
+> The operational consequence is severe: **any replica that ends up holding a
+> later `createdAt` for a record can never write to that record again.** Not
+> "that field is protected" — the record becomes permanently, silently
+> read-only from that replica's point of view, and the server still answers
+> 200. Two devices creating the same id while offline is enough to produce it.
+>
+> For this reason `createdAt` is **NOT** in the default policy of the opto-sync
+> clients (TypeScript, Dart, Rust) or of any opto-sync server. Their default is
+> `MERGE_BY_KEY` on `"id"`, `resolve_by_timestamp = true`,
+> `lww_keys = "updatedAt,syncedAt"`, and **no** `fww_keys`.
+>
+> Set `fww_keys` only when "the first writer owns this entire node, forever" is
+> genuinely the semantics you want — and put the key on the narrowest node that
+> should be frozen, never at a document root. If what you actually want is "the
+> `createdAt` field should not change", that is not what FWW does; keep
+> `createdAt` out of every timestamp list and let LWW govern the node.
 
 ### Comparison rules
 
@@ -148,10 +187,22 @@ serialized values, and may return replacement JSON. An unparseable return falls
 back to the default merge rather than dropping data. The returned pointer is
 freed by the core with `free()`, so it must be `malloc`-allocated.
 
-The callback is consulted for **every node where both sides are present** —
-objects, arrays (including a root-level array, at path `$`), and scalars —
-before the configured strategy descends into it. Returning `NULL` declines and
-leaves the strategy untouched.
+The callback is consulted for:
+
+| Node | Consulted? |
+|---|---|
+| scalars, and objects at any depth | yes |
+| arrays, under every strategy (incl. a root-level array, at path `$`) | yes |
+| a **scalar** element of an array under `MERGE_BY_INDEX` | yes |
+| a **matched object element** under `MERGE_BY_KEY` / `MERGE_BY_INDEX` | **no** |
+
+The exception is worth knowing: a matched object element is pushed straight onto
+the merge stack as a frame, so the callback sees the array (`$.arr`) and the keys
+*inside* the element (`$.arr[0].qty`) but never the element itself (`$.arr[0]`).
+Returning `NULL` declines and leaves the configured strategy untouched.
+
+Path indices under `MERGE_BY_KEY` are **base-array** indices — the position the
+identity matched at — not positions in the incoming array.
 
 > Arrays used to skip the callback entirely under every non-`REPLACE` strategy,
 > so an override registered for an array path was silently ignored under the
