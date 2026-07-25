@@ -109,10 +109,17 @@ export function withSyncer(
               throw new Error(
                 `opto-sync: gave up after ${maxRetries + 1} attempts merging "${fieldName}" on ` +
                 `${modelName} where ${JSON.stringify(where)} — the row kept changing ` +
-                `underneath (write contention). Retry, or serialize writes to this row.`
+                `underneath (write contention). Raise maxRetries, or serialize ` +
+                `writes to this row.`
               );
             }
-            // else: a concurrent writer won; loop and re-merge onto their result.
+
+            // A concurrent writer won. Back off with randomized (jittered)
+            // exponential delay before re-merging onto their result: retrying
+            // immediately makes N contending writers livelock, because they all
+            // re-read and re-CAS in lockstep and keep invalidating each other.
+            const backoffMs = Math.random() * Math.min(2 ** attempt, 32);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
           }
         }
       }
