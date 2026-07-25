@@ -117,6 +117,9 @@ pub fn try_merge_json_with_options(
         resolve_by_timestamp: opts.resolve_by_timestamp,
         lww_keys: lww_keys_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
         fww_keys: fww_keys_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+        array_match_keys: array_match_keys_cstr
+            .as_ref()
+            .map_or(ptr::null(), |c| c.as_ptr()),
     };
 
     unsafe {
