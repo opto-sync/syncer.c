@@ -61,15 +61,26 @@ static void gen_scalar(sb_t* s) {
 /* Array of "rows": objects carrying id + updatedAt/createdAt + payload —
    the shape MERGE_BY_KEY is designed for, plus occasional scalars mixed in. */
 static void gen_rows_array(sb_t* s, int depth) {
+    /* Identity values are unique within one array, per the MERGE_BY_KEY
+       contract in syncer.h — mirroring rows keyed by a primary key. */
+    uint32_t id_mask = 0;
     sb_put(s, "[");
     uint32_t n = rnd_below(5);
+    int emitted = 0;
     for (uint32_t i = 0; i < n; i++) {
-        if (i) sb_put(s, ",");
-        if (rnd_below(6) == 0) { gen_scalar(s); continue; }
+        if (rnd_below(6) == 0) {
+            if (emitted++) sb_put(s, ",");
+            gen_scalar(s);
+            continue;
+        }
+        uint32_t id = rnd_below(6);
+        if (id_mask & (1u << id)) continue;
+        id_mask |= (1u << id);
+        if (emitted++) sb_put(s, ",");
         char tmp[128];
         snprintf(tmp, sizeof(tmp),
                  "{\"id\":%u,\"updatedAt\":%u,\"createdAt\":%u,\"p\":",
-                 (unsigned)rnd_below(6), (unsigned)rnd_below(500),
+                 (unsigned)id, (unsigned)rnd_below(500),
                  (unsigned)rnd_below(500));
         sb_put(s, tmp);
         gen_value(s, depth + 1);
