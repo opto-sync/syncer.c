@@ -116,16 +116,26 @@ export const EXPECTED_MERGED = {
   ],
   // FWW: incoming createdAt is NEWER, so the whole audit subtree is rejected
   audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
-  // MERGE_BY_KEY on non-object elements behaves like UNION
+  // MERGE_BY_KEY on non-object elements behaves like UNION (dedup + append)
   tags: ['red', 'green', 'blue'],
-  embedding: [100, 100, 100],
+  embedding: [0, 10, 20, 100],
 };
 
 /** Expected result when OverrideStrategy is in play. */
 export const EXPECTED_MERGED_WITH_OVERRIDE = {
   ...EXPECTED_MERGED,
-  tags: ['blue', 'green', 'red'], // union + sort, from the JS callback
-  embedding: [50, 55, 60], // (base + incoming) / 2, from the JS callback
+  profile: {
+    ...EXPECTED_MERGED.profile,
+    theme: { mode: 'dark', accent: 'override(blue->red)' },
+  },
+  items: [
+    // still rejected wholesale — the override never sees its keys
+    { id: 'a', qty: 1, note: 'base-a', updatedAt: '2026-06-01T00:00:00Z' },
+    // qty summed by the JS callback: 2 + 42
+    { id: 'b', qty: 44, note: 'fresh-b', updatedAt: '2026-07-01T00:00:00Z' },
+    // appended, never a conflict
+    { id: 'c', qty: 7, note: 'new-c', updatedAt: '2026-07-01T00:00:00Z' },
+  ],
 };
 
 export const BASE_RAW = JSON.stringify(BASE_DOC);
