@@ -184,18 +184,26 @@ export async function register() {
     equal(r.rows[0].n, 0, 'no row inserted as a side effect');
   });
 
-  test('DEFECT: a JSON null field is treated as an empty document', async () => {
-    await resetPrismaTable();
-    // Prisma "Json" maps a SQL NULL to null on read.
-    await exec(`alter table ${TABLE} alter column doc drop not null`);
-    await exec(`insert into ${TABLE} (id, doc) values ('nul', null)`);
-    const rec = await sync('nul');
-    deepEqual(rec.doc, JSON.parse(INCOMING_RAW), 'NULL base merged as {} so incoming is adopted');
-    deepEqual(
-      await readPersisted(TABLE, 'id', 'nul', 'doc'),
-      JSON.parse(INCOMING_RAW),
-      'result persisted over the NULL',
-    );
+  test('DEFECT: a SQL NULL jsonb column is treated as an empty document', async () => {
+    // Both write paths must handle NULL: the CAS path (dbNull sentinel supplied)
+    // and the documented fallback path (sentinel omitted).
+    for (const [label, cfg] of [
+      ['with Prisma.DbNull (CAS path)', { dbNull: PrismaNS.DbNull }],
+      ['without dbNull (fallback path)', {}],
+    ] as Array<[string, any]>) {
+      await resetPrismaTable();
+      await exec(`insert into ${TABLE} (id, doc) values ('nul', null)`);
+      const client = prisma.$extends(
+        withSyncer('PrismaDoc', 'doc', new PassthroughStrategy(), POLICY, cfg),
+      );
+      const rec = await client.prismaDoc.syncJsonField({ id: 'nul' }, INCOMING_RAW);
+      deepEqual(rec.doc, JSON.parse(INCOMING_RAW), `${label}: NULL base merged as {}`);
+      deepEqual(
+        await readPersisted(TABLE, 'id', 'nul', 'doc'),
+        JSON.parse(INCOMING_RAW),
+        `${label}: result persisted over the NULL`,
+      );
+    }
   });
 
   test('DEFECT: a wrong fieldName fails with a clear message, not "String expected"', async () => {
