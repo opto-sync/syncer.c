@@ -26,9 +26,11 @@ defmodule OptoSyncNif.MixProject do
   defp deps do
     [
       {:rustler, "~> 0.36"},
-      # Test-only: lets assertions compare decoded documents instead of
-      # pattern-matching serialized text. The library itself never decodes JSON.
-      {:jason, "~> 1.4", only: :test},
+      # Used by tests to compare decoded documents instead of pattern-matching
+      # serialized text. This library itself never decodes JSON — it hands text
+      # straight to the native engine. (Not `only: :test`: rustler depends on
+      # jason unconditionally, and Mix rejects a narrower :only than a dep's.)
+      {:jason, "~> 1.4"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end

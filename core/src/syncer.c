@@ -76,7 +76,7 @@ static void path_restore(path_buf_t* p, size_t saved) {
     p->buf[p->len] = '\0';
 }
 
-/* Takes an explicit length: JSON keys may legally contain NUL (\0), so the
+/* Takes an explicit length: JSON keys may legally contain an escaped NUL, so the
  * key is never treated as a C string. The path handed to override callbacks is
  * a `const char*` and therefore still appears truncated at an embedded NUL —
  * unavoidable given that signature — but the buffer's own length accounting
@@ -666,11 +666,12 @@ static bool do_merge(
             yyjson_val* val2 = yyjson_obj_iter_get_val(k2);
             const char* key_str = yyjson_get_str(k2);
             /* Length-explicit throughout: a JSON key may legally contain an
-               escaped NUL (RFC 8259 permits  ), and strlen-based lookup
-               or key creation truncates there — silently aliasing the key
-               "a b" onto an unrelated existing key "a", overwriting it
-               AND dropping the real key. Values were always length-correct
-               via yyjson_val_mut_copy; keys have to match that. */
+               escaped NUL (RFC 8259 permits the escape sequence backslash-
+               u-0-0-0-0 inside a string), and strlen-based lookup or key
+               creation truncates there. That silently aliases an incoming
+               key onto an unrelated shorter existing key, overwriting it AND
+               dropping the real key. Values were always length-correct via
+               yyjson_val_mut_copy; keys have to match that. */
             size_t key_len = yyjson_get_len(k2);
             yyjson_mut_val* val1 = yyjson_mut_obj_getn(top->v1, key_str, key_len);
 
