@@ -682,9 +682,59 @@ func TestConcurrentUpdatesLoseWrites(t *testing.T) {
 		t.Error("no writer survived at all, which should be impossible")
 	}
 	if len(items) < n {
-		t.Logf("KNOWN LIMITATION: %d/%d concurrent merges survived — the plugin's "+
-			"read-merge-write is not atomic (no SELECT ... FOR UPDATE, no CAS). "+
-			"Serialize updates to one row, or wrap them in a transaction that locks it.",
-			len(items), n)
+		t.Logf("KNOWN LIMITATION: %d/%d concurrent merges survived. Outside a "+
+			"transaction each statement is its own implicit transaction, so the "+
+			"plugin's FOR UPDATE lock is released before the UPDATE runs and "+
+			"read-merge-write is not atomic. Wrap the update in a transaction "+
+			"(see TestConcurrentUpdatesInTransactionAreSafe).", len(items), n)
+	}
+}
+
+// TestConcurrentUpdatesInTransactionAreSafe is the counterpart to the test
+// above: when the caller wraps the update in a transaction, the plugin's
+// `SELECT ... FOR UPDATE` spans the whole read-merge-write, so concurrent syncs
+// of the same row serialize and NO merge is lost.
+func TestConcurrentUpdatesInTransactionAreSafe(t *testing.T) {
+	db := openDB(t, canonicalOptions())
+	resetTable(t, db)
+	seed(t, db, "race-tx", `{"items":[]}`)
+
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			doc, _ := json.Marshal(map[string]interface{}{
+				"items": []map[string]interface{}{{"id": string(rune('a' + i)), "v": i}},
+			})
+			errs[i] = db.Transaction(func(tx *gorm.DB) error {
+				return tx.Model(&Doc{}).Where("id = ?", "race-tx").
+					Updates(map[string]interface{}{"doc": string(doc)}).Error
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("writer %d failed: %v", i, err)
+		}
+	}
+
+	got := readPersisted(t, db, "race-tx")
+	items := got["items"].([]interface{})
+	if len(items) != n {
+		t.Errorf("len(items) = %d, want %d — a transaction-wrapped merge must not lose writes", len(items), n)
+	}
+	seen := map[string]bool{}
+	for _, e := range items {
+		seen[e.(map[string]interface{})["id"].(string)] = true
+	}
+	for i := 0; i < n; i++ {
+		if id := string(rune('a' + i)); !seen[id] {
+			t.Errorf("writer element id=%q was lost", id)
+		}
 	}
 }
