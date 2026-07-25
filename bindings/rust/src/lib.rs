@@ -43,6 +43,10 @@ pub struct MergeOptions {
     pub resolve_by_timestamp: bool,
     pub lww_keys: Option<String>,
     pub fww_keys: Option<String>,
+    /// Comma-separated identity keys for [`ArrayMergeStrategy::MergeByKey`]
+    /// (e.g. `"uuid,id"`). The first listed key present in an incoming
+    /// element is its identity. `None` = `"id"`.
+    pub array_match_keys: Option<String>,
 }
 
 extern "C" {
