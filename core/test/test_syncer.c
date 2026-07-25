@@ -792,6 +792,91 @@ static void test_unicode_and_escaped_keys(void) {
 }
 
 /* ========================================================================== */
+/*  Test: UNION dedup is key-order independent                                */
+/* ========================================================================== */
+
+static void test_union_dedup_key_order_independent(void) {
+    /* Regression: dedup used to compare serialized text, so an element whose
+       keys had been reordered (exactly what Postgres jsonb does on every
+       write) was never recognized as a duplicate — UNION degraded to APPEND
+       and lost idempotency. */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_UNION;
+
+    const char* j1 = "{\"arr\":[{\"id\":\"c\",\"v\":3}]}";
+    const char* j2 = "{\"arr\":[{\"v\":3,\"id\":\"c\"}]}"; /* same element, keys swapped */
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(strstr(r, "},{") == NULL); /* still exactly one element */
+    syncer_free(r);
+
+    /* Nested objects and arrays inside the element, also reordered. */
+    const char* j3 = "{\"arr\":[{\"id\":1,\"meta\":{\"a\":1,\"b\":[1,2]},\"z\":true}]}";
+    const char* j4 = "{\"arr\":[{\"z\":true,\"meta\":{\"b\":[1,2],\"a\":1},\"id\":1}]}";
+    char* r2 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r2 != NULL);
+    assert(strstr(r2, "},{") == NULL);
+    syncer_free(r2);
+
+    /* Genuinely different elements must still be appended. */
+    const char* j5 = "{\"arr\":[{\"id\":1,\"v\":1}]}";
+    const char* j6 = "{\"arr\":[{\"v\":2,\"id\":1}]}";
+    char* r3 = syncer_merge_json_ex(j5, j6, &opts);
+    assert(r3 != NULL);
+    assert(strstr(r3, "},{") != NULL); /* two distinct elements */
+    syncer_free(r3);
+}
+
+static void test_union_dedup_semantics(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_UNION;
+
+    /* Array element ORDER stays significant: [1,2] != [2,1]. */
+    const char* j1 = "{\"arr\":[[1,2]]}";
+    const char* j2 = "{\"arr\":[[2,1]]}";
+    char* r = syncer_merge_json_ex(j1, j2, &opts);
+    assert(r != NULL);
+    assert(strstr(r, "[[1,2],[2,1]]") != NULL);
+    syncer_free(r);
+
+    /* Key subset/superset are not equal. */
+    const char* j3 = "{\"arr\":[{\"a\":1}]}";
+    const char* j4 = "{\"arr\":[{\"a\":1,\"b\":2}]}";
+    char* r2 = syncer_merge_json_ex(j3, j4, &opts);
+    assert(r2 != NULL);
+    assert(strstr(r2, "},{") != NULL);
+    syncer_free(r2);
+
+    /* Scalars, nulls and booleans dedup by value. */
+    const char* j5 = "{\"arr\":[1,\"s\",null,true]}";
+    const char* j6 = "{\"arr\":[true,null,\"s\",1,2]}";
+    char* r3 = syncer_merge_json_ex(j5, j6, &opts);
+    assert(r3 != NULL);
+    assert(strstr(r3, "[1,\"s\",null,true,2]") != NULL);
+    syncer_free(r3);
+}
+
+static void test_union_idempotent_after_reorder(void) {
+    /* Applying the same payload twice must be a no-op even when the stored
+       side has had its keys reordered in between (the jsonb round trip). */
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = SYNCER_ARRAY_UNION;
+
+    const char* stored = "{\"arr\":[{\"v\":3,\"id\":\"c\"},{\"q\":1,\"id\":\"d\"}]}";
+    const char* incoming = "{\"arr\":[{\"id\":\"c\",\"v\":3},{\"id\":\"d\",\"q\":1}]}";
+    char* once = syncer_merge_json_ex(stored, incoming, &opts);
+    assert(once != NULL);
+    char* twice = syncer_merge_json_ex(once, incoming, &opts);
+    assert(twice != NULL);
+    assert(strcmp(once, twice) == 0);
+    /* Two elements, not four. */
+    assert(strstr(once, "\"id\":\"c\"") != NULL);
+    assert(strstr(once, "\"id\":\"d\"") != NULL);
+    syncer_free(once);
+    syncer_free(twice);
+}
+
+/* ========================================================================== */
 /*  Main                                                                      */
 /* ========================================================================== */
 
