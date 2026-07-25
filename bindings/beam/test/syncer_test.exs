@@ -47,7 +47,11 @@ defmodule SyncerTest do
       incoming = ~s({"a":{"b":{"d":2}},"y":2})
 
       # Unlimited (the default): the innermost objects merge.
-      assert merged!(base, incoming) == %{"a" => %{"b" => %{"c" => 1, "d" => 2}}, "z" => 1, "y" => 2}
+      assert merged!(base, incoming) == %{
+               "a" => %{"b" => %{"c" => 1, "d" => 2}},
+               "z" => 1,
+               "y" => 2
+             }
 
       # Depth 1: "a" is at the limit, so its incoming value is taken wholesale
       # ("c" is lost) while the top-level keys still merge.

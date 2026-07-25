@@ -124,7 +124,7 @@ defmodule OptoSyncEcto.PostgresIntegrationTest do
       |> Repo.update!()
     end
 
-    items = Repo.one!(from d in SyncDoc, where: d.id == ^doc.id, select: d.items)
+    items = Repo.one!(from(d in SyncDoc, where: d.id == ^doc.id, select: d.items))
     assert length(items) == 2
   end
 end

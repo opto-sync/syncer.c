@@ -192,8 +192,10 @@ defmodule Syncer do
       array_strategy: strategy!(Keyword.get(opts, :array_strategy, :replace)),
       array_match_keys: key_list!(Keyword.get(opts, :array_match_keys), :array_match_keys),
       max_depth: max_depth!(Keyword.get(opts, :max_depth, 0)),
-      detect_circular_refs: boolean!(Keyword.get(opts, :detect_circular_refs, false), :detect_circular_refs),
-      resolve_by_timestamp: boolean!(Keyword.get(opts, :resolve_by_timestamp, false), :resolve_by_timestamp),
+      detect_circular_refs:
+        boolean!(Keyword.get(opts, :detect_circular_refs, false), :detect_circular_refs),
+      resolve_by_timestamp:
+        boolean!(Keyword.get(opts, :resolve_by_timestamp, false), :resolve_by_timestamp),
       lww_keys: key_list!(Keyword.get(opts, :lww_keys), :lww_keys),
       fww_keys: key_list!(Keyword.get(opts, :fww_keys), :fww_keys)
     }
@@ -236,7 +238,8 @@ defmodule Syncer do
         :ok
 
       other ->
-        raise ArgumentError, "#{inspect(opt)} entries must be binaries or atoms, got: #{inspect(other)}"
+        raise ArgumentError,
+              "#{inspect(opt)} entries must be binaries or atoms, got: #{inspect(other)}"
     end)
 
     Enum.map_join(keys, ",", &to_string/1)

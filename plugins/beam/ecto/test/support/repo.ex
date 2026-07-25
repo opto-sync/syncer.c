@@ -14,8 +14,8 @@ defmodule OptoSyncEcto.Test.SyncDoc do
   use Ecto.Schema
 
   schema "sync_docs" do
-    field :metadata, :map
-    field :items, {:array, :map}
+    field(:metadata, :map)
+    field(:items, {:array, :map})
   end
 
   @doc """

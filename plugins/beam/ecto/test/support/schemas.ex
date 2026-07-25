@@ -11,10 +11,10 @@ defmodule OptoSyncEcto.Test.Doc do
 
   @primary_key {:id, :binary_id, autogenerate: false}
   embedded_schema do
-    field :title, :string
-    field :metadata, :map
-    field :rows, {:array, :map}
-    field :raw, :string
+    field(:title, :string)
+    field(:metadata, :map)
+    field(:rows, {:array, :map})
+    field(:raw, :string)
   end
 
   def changeset(doc, attrs, opts \\ []) do
