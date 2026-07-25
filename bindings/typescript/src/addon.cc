@@ -9,16 +9,22 @@
 // threads (worker_threads) cannot race; the caller saves/restores it so a
 // callback that re-enters mergeJson cannot clobber the outer call's callback.
 thread_local Napi::FunctionReference* t_callback = nullptr;
-// Set when the JS callback throws: the exception must not unwind C++ frames
-// through the C merge engine, so it is captured here and rethrown after the
-// merge returns.
-thread_local bool t_cb_threw = false;
-thread_local std::string t_cb_error_msg;
 
+// NOTE on exceptions: binding.gyp defines NAPI_DISABLE_CPP_EXCEPTIONS, so
+// node-addon-api never throws Napi::Error as a C++ exception. When the JS
+// override throws, the exception becomes "pending" on the env and Call()
+// returns an empty value. We detect that with env.IsExceptionPending():
+// once pending, we stop invoking the callback for subsequent keys (returning
+// NULL so the C core falls back to its default merge), and after the merge
+// completes we simply return to JS so the pending exception propagates.
 char* cpp_override_cb(const char* json_path, const char* v1, const char* v2) {
-    if (t_callback == nullptr || t_callback->IsEmpty() || t_cb_threw) return nullptr;
+    if (t_callback == nullptr || t_callback->IsEmpty()) return nullptr;
 
     Napi::Env env = t_callback->Env();
+    // A previous invocation of the JS override already threw: don't call
+    // back into JS again while an exception is pending.
+    if (env.IsExceptionPending()) return nullptr;
+
     Napi::HandleScope scope(env);
 
     napi_value args[3] = {
@@ -27,15 +33,15 @@ char* cpp_override_cb(const char* json_path, const char* v1, const char* v2) {
         Napi::String::New(env, v2)
     };
 
-    try {
-        Napi::Value res = t_callback->Call({args[0], args[1], args[2]});
-        if (res.IsString()) {
-            std::string str = res.As<Napi::String>().Utf8Value();
-            return strdup(str.c_str());
-        }
-    } catch (const Napi::Error& e) {
-        t_cb_threw = true;
-        t_cb_error_msg = e.Message();
+    Napi::Value res = t_callback->Call({args[0], args[1], args[2]});
+    if (env.IsExceptionPending() || res.IsEmpty()) {
+        // JS override threw: leave the exception pending and let the core
+        // use its default merge for this (and every later) key.
+        return nullptr;
+    }
+    if (res.IsString()) {
+        std::string str = res.As<Napi::String>().Utf8Value();
+        return strdup(str.c_str());
     }
 
     return nullptr;
