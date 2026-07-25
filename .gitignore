@@ -13,3 +13,16 @@ bindings/dart/.dart_tool/
 # IDE
 .vscode/
 .idea/
+
+# Rust build output anywhere
+**/target/
+
+# Dart tool caches anywhere
+**/.dart_tool/
+
+# Compiled test binaries and debug symbols
+core/test/test_syncer
+core/test/prop_test
+core/test/quick_test
+core/test/*_asan
+**/*.dSYM/

@@ -379,6 +379,16 @@ static bool check_crdt_keys(yyjson_mut_val* v1, yyjson_val* v2, const char* keys
                     int64_t i2 = yyjson_get_sint(t2);
                     cmp = (i1 > i2) - (i1 < i2);
                     comparable = true;
+                } else if (yyjson_mut_is_num(t1) && yyjson_is_num(t2)) {
+                    /* At least one side is a real (e.g. epoch seconds with a
+                       fractional part from time.time()). Compare as doubles so
+                       float timestamps cannot silently bypass resolution.
+                       Exact int64 comparison above still covers the int-int
+                       case, so nanosecond-precision integers stay lossless. */
+                    double d1 = yyjson_mut_get_num(t1);
+                    double d2 = yyjson_get_num(t2);
+                    cmp = (d1 > d2) - (d1 < d2);
+                    comparable = true;
                 } else {
                     /* Normalize int-vs-string pairs so a writer switching the
                        field between number and string cannot bypass
