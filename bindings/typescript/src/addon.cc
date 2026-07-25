@@ -96,6 +96,10 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
             fww_keys_storage = jOpts.Get("fwwKeys").As<Napi::String>().Utf8Value();
             opts.fww_keys = fww_keys_storage.c_str();
         }
+        if (jOpts.Has("arrayMatchKeys") && jOpts.Get("arrayMatchKeys").IsString()) {
+            array_match_keys_storage = jOpts.Get("arrayMatchKeys").As<Napi::String>().Utf8Value();
+            opts.array_match_keys = array_match_keys_storage.c_str();
+        }
         if (jOpts.Has("overrideCb") && jOpts.Get("overrideCb").IsFunction()) {
             cbRef.Reset(jOpts.Get("overrideCb").As<Napi::Function>(), 1);
             opts.override_cb = cpp_override_cb;
