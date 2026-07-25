@@ -1,0 +1,11 @@
+[package]
+name = "run-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+syncer-rs = { path = "../../bindings/rust" }
+
+[[bin]]
+name = "run_rust"
+path = "src/main.rs"
