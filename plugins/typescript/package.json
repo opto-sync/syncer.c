@@ -4,9 +4,16 @@
   "private": true,
   "description": "opto-sync ORM plugins (Drizzle, Kysely, TypeORM, Prisma) + integration tests",
   "scripts": {
+    "typecheck": "npm run typecheck:stubs && npm run typecheck:real",
     "typecheck:stubs": "tsc -p tsconfig.json",
     "typecheck:real": "tsc -p tsconfig.real.json",
-    "test": "node --enable-source-maps ./node_modules/.bin/tsx test/run-all.ts"
+    "prisma:generate": "prisma generate --schema test/prisma-schema/schema.prisma",
+    "pretest": "npm run typecheck",
+    "test": "tsx test/run-all.ts",
+    "test:drizzle": "tsx test/run-all.ts drizzle",
+    "test:kysely": "tsx test/run-all.ts kysely",
+    "test:typeorm": "tsx test/run-all.ts typeorm",
+    "test:prisma": "tsx test/run-all.ts prisma"
   },
   "devDependencies": {
     "@prisma/client": "^6.19.3",
