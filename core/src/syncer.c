@@ -667,6 +667,15 @@ static bool do_merge(
         }
     } else if (ok && yyjson_mut_is_arr(root1) && yyjson_is_arr(root2)
                && arr_strat != SYNCER_ARRAY_REPLACE) {
+        /* A root-level array is still a node the host may override ("$"). */
+        yyjson_mut_val* ov = try_override_node(doc, opts, &path, root1, root2);
+        if (ov) {
+            yyjson_mut_doc_set_root(doc, ov);
+            stack_free(&stack);
+            path_free(&path);
+            if (opts && opts->detect_circular_refs) visited_free(&visited);
+            return true;
+        }
         merge_frame_t* f = stack_push(&stack);
         if (!f) {
             ok = false;
@@ -747,26 +756,14 @@ static bool do_merge(
                     continue;
                 }
 
-                /* Try callback first. Only short-circuit when the override
-                   produced parseable JSON; an unparseable result falls back
-                   to the default deep merge (mirrors merge_leaf) instead of
-                   silently dropping v2's subtree. */
-                if (opts && opts->override_cb) {
-                    char* s1 = yyjson_mut_val_write(val1, 0, NULL);
-                    char* s2 = yyjson_val_write(val2, 0, NULL);
-                    char* res = (s1 && s2) ? opts->override_cb(path.buf, s1, s2) : NULL;
-                    free(s1);
-                    free(s2);
-                    if (res) {
-                        yyjson_doc* pd = yyjson_read(res, strlen(res), 0);
-                        free(res);
-                        if (pd) {
-                            yyjson_mut_val* mv = yyjson_val_mut_copy(doc, yyjson_doc_get_root(pd));
-                            yyjson_doc_free(pd);
-                            if (mv) yyjson_mut_obj_put(top->v1, yyjson_mut_strn(doc, key_str, key_len), mv);
-                            path_restore(&path, saved);
-                            continue;
-                        }
+                /* Try the callback first; an unparseable result falls back to
+                   the default deep merge rather than dropping v2's subtree. */
+                {
+                    yyjson_mut_val* mv = try_override_node(doc, opts, &path, val1, val2);
+                    if (mv) {
+                        yyjson_mut_obj_put(top->v1, yyjson_mut_strn(doc, key_str, key_len), mv);
+                        path_restore(&path, saved);
+                        continue;
                     }
                 }
                 merge_frame_t* f = stack_push(&stack);
@@ -785,6 +782,14 @@ static bool do_merge(
             /* Both arrays with non-replace strategy: push array frame */
             if (yyjson_mut_is_arr(val1) && yyjson_is_arr(val2)
                 && arr_strat != SYNCER_ARRAY_REPLACE) {
+                /* Same contract as objects: the host gets to decide this node
+                   before the strategy descends into it. */
+                yyjson_mut_val* ov = try_override_node(doc, opts, &path, val1, val2);
+                if (ov) {
+                    yyjson_mut_obj_put(top->v1, yyjson_mut_strn(doc, key_str, key_len), ov);
+                    path_restore(&path, saved);
+                    continue;
+                }
                 merge_frame_t* f = stack_push(&stack);
                 if (!f) {
                     ok = false;

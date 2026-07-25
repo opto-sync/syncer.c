@@ -143,6 +143,16 @@ serialized values, and may return replacement JSON. An unparseable return falls
 back to the default merge rather than dropping data. The returned pointer is
 freed by the core with `free()`, so it must be `malloc`-allocated.
 
+The callback is consulted for **every node where both sides are present** —
+objects, arrays (including a root-level array, at path `$`), and scalars —
+before the configured strategy descends into it. Returning `NULL` declines and
+leaves the strategy untouched.
+
+> Arrays used to skip the callback entirely under every non-`REPLACE` strategy,
+> so an override registered for an array path was silently ignored under the
+> default policy. Fixed in 0.2.1; the asymmetry is pinned by
+> `test_override_reaches_arrays`.
+
 Not every binding exposes callbacks: Rust, Go, and the BEAM binding
 deliberately omit them (crossing back into a managed runtime mid-merge is a
 footgun). TypeScript and Dart support them.
