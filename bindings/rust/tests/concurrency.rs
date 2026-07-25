@@ -192,7 +192,7 @@ fn legacy_path_and_ex_path_do_not_interfere() {
         let expected = legacy_expected.clone();
         handles.push(thread::spawn(move || {
             for i in 0..ITERS {
-                let got = merge_json(legacy_j1, legacy_j2);
+                let got = legacy_merge(legacy_j1, legacy_j2);
                 assert_eq!(got, expected, "legacy thread {t} iter {i}");
             }
         }));
