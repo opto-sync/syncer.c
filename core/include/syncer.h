@@ -20,7 +20,9 @@ typedef enum {
     SYNCER_ARRAY_MERGE_BY_KEY      /* match object elements by identity key(s), deep-merge
                                       matched pairs (honoring timestamp resolution), append
                                       unmatched v2 elements, keep v1-only elements.
-                                      Non-object elements behave like UNION (idempotent). */
+                                      Non-object elements behave like UNION (idempotent).
+                                      Contract: an identity value appears at most once per
+                                      array (duplicate matches bind to the first element). */
 } syncer_array_strategy_t;
 
 /* --------------------------------------------------------------------------
