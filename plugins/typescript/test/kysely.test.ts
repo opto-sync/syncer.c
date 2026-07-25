@@ -324,14 +324,6 @@ export async function register() {
   });
 }
 
-function tabLeOrSelf() {
-  return TABLE;
-}
-// alias kept tiny to avoid a typo above being silently wrong
-function TABleOrSelf() {
-  return tabLeOrSelf();
-}
-
 export async function teardown() {
   await db?.destroy();
 }
