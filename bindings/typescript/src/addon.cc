@@ -58,9 +58,12 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     std::string j1 = info[0].As<Napi::String>().Utf8Value();
     std::string j2 = info[1].As<Napi::String>().Utf8Value();
 
+    /* syncer_default_options() fully initializes EVERY field, including the
+       v0.2.0 array_match_keys pointer — never construct this struct by hand. */
     syncer_merge_options_t opts = syncer_default_options();
     std::string lww_keys_storage; /* to keep the string alive if we copy it */
     std::string fww_keys_storage;
+    std::string array_match_keys_storage;
     Napi::FunctionReference cbRef; /* per-call callback ref; released on return */
 
     /* IsFunction must be tested BEFORE IsObject: node-addon-api's IsObject()
