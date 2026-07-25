@@ -1,0 +1,17 @@
+[package]
+name = "syncer_nif"
+version = "0.2.0"
+edition = "2021"
+publish = false
+description = "Rustler NIF exposing the syncer.c deep JSON merge engine to the BEAM"
+
+[lib]
+name = "syncer_nif"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36"
+# The C core is compiled into syncer-rs by its build.rs (cc + core/src/*.c),
+# so this NIF needs no prebuilt shared library — only a C toolchain.
+syncer-rs = { path = "../../../rust" }
