@@ -1,9 +1,9 @@
 [package]
 name = "opto-sync-seaorm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "opto-sync jsonb reconciliation helpers for SeaORM workflows"
 
 [dependencies]
-sea-orm = "0.12"
 serde_json = "1.0"
-opto-sync-syncer = { path = "../../../bindings/rust" }
+syncer-rs = { path = "../../../bindings/rust" }
