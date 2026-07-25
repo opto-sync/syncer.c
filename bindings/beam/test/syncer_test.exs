@@ -42,10 +42,27 @@ defmodule SyncerTest do
       assert merged!(~s({"a":{"b":[1,2]}}), ~s({})) == %{"a" => %{"b" => [1, 2]}}
     end
 
-    test "max_depth stops recursing (deeper subtree is taken wholesale)" do
-      # Depth-limited merge must still produce valid JSON containing both sides'
-      # top-level keys.
-      assert %{"a" => %{}, "z" => 1} = merged!(~s({"a":{"b":{"c":1}},"z":1}), ~s({"a":{}}), max_depth: 1)
+    test "max_depth stops recursing: below the limit the incoming subtree replaces the base" do
+      base = ~s({"a":{"b":{"c":1}},"z":1})
+      incoming = ~s({"a":{"b":{"d":2}},"y":2})
+
+      # Unlimited (the default): the innermost objects merge.
+      assert merged!(base, incoming) == %{"a" => %{"b" => %{"c" => 1, "d" => 2}}, "z" => 1, "y" => 2}
+
+      # Depth 1: "a" is at the limit, so its incoming value is taken wholesale
+      # ("c" is lost) while the top-level keys still merge.
+      assert merged!(base, incoming, max_depth: 1) == %{
+               "a" => %{"b" => %{"d" => 2}},
+               "z" => 1,
+               "y" => 2
+             }
+    end
+
+    test "detect_circular_refs is accepted and does not disturb an acyclic merge" do
+      assert merged!(~s({"a":1}), ~s({"a":2,"b":3}), detect_circular_refs: true) == %{
+               "a" => 2,
+               "b" => 3
+             }
     end
   end
 
