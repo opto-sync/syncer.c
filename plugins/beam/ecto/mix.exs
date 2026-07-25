@@ -4,10 +4,13 @@ defmodule OptoSyncEcto.MixProject do
   def project do
     [
       app: :opto_sync_ecto,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      description:
+        "Ecto changeset helpers that reconcile jsonb columns through the opto-sync " <>
+          "deep-merge engine instead of overwriting them."
     ]
   end
 
@@ -20,7 +23,12 @@ defmodule OptoSyncEcto.MixProject do
   defp deps do
     [
       {:ecto, "~> 3.10"},
-      # {:opto_sync_nif, path: "../../../bindings/beam"}
+      {:jason, "~> 1.4"},
+      {:opto_sync_nif, path: "../../../bindings/beam"},
+      # Only used by the Postgres integration test, which is tagged
+      # :integration and excluded by default — `mix test` needs no database.
+      {:ecto_sql, "~> 3.10", only: [:dev, :test]},
+      {:postgrex, "~> 0.17", only: [:dev, :test]}
     ]
   end
 end
