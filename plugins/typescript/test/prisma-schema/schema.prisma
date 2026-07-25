@@ -10,8 +10,9 @@ datasource db {
 }
 
 model PrismaDoc {
-  id    String  @id
-  doc   Json
+  id String @id
+  // Nullable so the plugin's "SQL NULL == empty document" handling is testable.
+  doc   Json?
   label String?
 
   @@map("prisma_docs")
