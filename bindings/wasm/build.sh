@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 REL_DIR="${HERE#"$REPO_ROOT"/}"
 
 # Pinned so the committed artifacts are reproducible. Bump deliberately.
-EMSDK_IMAGE="${EMSDK_IMAGE:-emscripten/emsdk:4.0.18}"
+EMSDK_IMAGE="${EMSDK_IMAGE:-emscripten/emsdk:6.0.4}"
 
 # ---------------------------------------------------------------------------
 # Sources: the frozen core plus this binding's shim. The core is compiled from
