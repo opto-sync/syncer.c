@@ -1,0 +1,27 @@
+# Test image for the BEAM binding.
+#
+# Needs three toolchains in one place: Rust (Rustler NIF), a C compiler (the
+# syncer.c core is compiled into syncer-rs by its build.rs), and Elixir/OTP.
+# The official elixir images have no cargo, so start from Rust and add
+# Elixir/OTP from Debian trixie (Elixir 1.18 / OTP 27).
+#
+#   docker build -f Dockerfile.test -t opto-sync-beam-test .
+#   docker run --rm -v "$(git rev-parse --show-toplevel)":/src \
+#     -w /src/bindings/beam opto-sync-beam-test \
+#     sh -c 'mix deps.get && mix test'
+FROM rust:1.97-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        elixir \
+        erlang-dev \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV MIX_HOME=/opt/mix \
+    HEX_HOME=/opt/hex
+
+RUN mix local.hex --force && mix local.rebar --force
+
+WORKDIR /src/bindings/beam
