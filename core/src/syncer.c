@@ -295,13 +295,20 @@ static bool eq_nums(yyjson_mut_val* a, yyjson_val* b) {
     return yyjson_mut_get_num(a) == yyjson_get_num(b);
 }
 
-static bool vals_deep_equal(yyjson_mut_val* root_a, yyjson_val* root_b) {
-    eq_stack_t st;
-    eq_init(&st);
-    bool equal = eq_push(&st, root_a, root_b);
+/* Takes a caller-owned scratch stack so a scan over an array reuses one
+ * allocation instead of malloc/free-ing per candidate pair. UNION dedup is
+ * O(n*m) comparisons, so at n=1000 that was ~500k allocation pairs per merge —
+ * enough that the comparator was measurably allocator-bound (native libmalloc
+ * lost to emscripten's dlmalloc on the same workload, which is what exposed
+ * this). Count is reset per call; capacity persists. */
+static bool vals_deep_equal_with(eq_stack_t* st,
+                                 yyjson_mut_val* root_a,
+                                 yyjson_val* root_b) {
+    st->count = 0;
+    bool equal = eq_push(st, root_a, root_b);
 
-    while (equal && st.count > 0) {
-        eq_pair_t p = st.items[--st.count];
+    while (equal && st->count > 0) {
+        eq_pair_t p = st->items[--st->count];
         yyjson_mut_val* a = p.a;
         yyjson_val*     b = p.b;
 
@@ -316,7 +323,7 @@ static bool vals_deep_equal(yyjson_mut_val* root_a, yyjson_val* root_b) {
             while ((k = yyjson_obj_iter_next(&it))) {
                 yyjson_mut_val* va =
                     yyjson_mut_obj_getn(a, yyjson_get_str(k), yyjson_get_len(k));
-                if (!va || !eq_push(&st, va, yyjson_obj_iter_get_val(k))) {
+                if (!va || !eq_push(st, va, yyjson_obj_iter_get_val(k))) {
                     equal = false;
                     break;
                 }
@@ -329,7 +336,7 @@ static bool vals_deep_equal(yyjson_mut_val* root_a, yyjson_val* root_b) {
                 break;
             }
             for (size_t i = 0; i < n; i++) {
-                if (!eq_push(&st, yyjson_mut_arr_get(a, i), yyjson_arr_get(b, i))) {
+                if (!eq_push(st, yyjson_mut_arr_get(a, i), yyjson_arr_get(b, i))) {
                     equal = false;
                     break;
                 }
@@ -347,18 +354,24 @@ static bool vals_deep_equal(yyjson_mut_val* root_a, yyjson_val* root_b) {
         }
     }
 
-    eq_free(&st);
     return equal;
 }
 
 static bool array_contains(yyjson_mut_val* arr, yyjson_val* needle) {
+    eq_stack_t st;
+    eq_init(&st);
+    bool found = false;
     yyjson_mut_arr_iter iter;
     yyjson_mut_arr_iter_init(arr, &iter);
     yyjson_mut_val* elem;
     while ((elem = yyjson_mut_arr_iter_next(&iter))) {
-        if (vals_deep_equal(elem, needle)) return true;
+        if (vals_deep_equal_with(&st, elem, needle)) {
+            found = true;
+            break;
+        }
     }
-    return false;
+    eq_free(&st);
+    return found;
 }
 
 /* ========================================================================== */
