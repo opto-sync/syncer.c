@@ -1,5 +1,11 @@
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
-import { mergeJson } from '../../../bindings/typescript';
+import { mergeJson, MergeOptions } from '../../../bindings/typescript';
+
+/**
+ * Merge options a plugin caller may tune. The override callback is always
+ * derived from the strategy, so it is not part of the public surface.
+ */
+export type SyncerMergeOptions = Omit<MergeOptions, 'overrideCb'>;
 
 /* Column names are interpolated as SQL identifiers (they cannot be bound as
    parameters), so they must be plain identifiers — anything else is rejected
@@ -8,7 +14,7 @@ const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * A TypeORM ValueTransformer for JSONB columns.
- * While TypeORM normally calls this on every read/write, 
+ * While TypeORM normally calls this on every read/write,
  * this transformer can store the strategy to be used by a custom repository method.
  */
 export function SyncerJsonbTransformer<T>(strategy: BaseMergeStrategy<T>) {
@@ -25,13 +31,18 @@ export function SyncerJsonbTransformer<T>(strategy: BaseMergeStrategy<T>) {
 /**
  * TypeORM utility for zero-deserialization merge.
  * Requires querying the DB using QueryBuilder to get the raw string.
+ *
+ * @param options Optional merge tuning (arrayStrategy incl. MERGE_BY_KEY,
+ *                arrayMatchKeys, maxDepth, detectCircularRefs,
+ *                resolveByTimestamp, lwwKeys, fwwKeys) forwarded to the C core.
  */
 export async function typeOrmSyncMerge<T>(
   repository: any,
   id: string | number,
   columnName: string,
   incomingRawJson: string,
-  strategy: BaseMergeStrategy<T>
+  strategy: BaseMergeStrategy<T>,
+  options?: SyncerMergeOptions
 ): Promise<void> {
   if (!SAFE_IDENTIFIER.test(columnName)) {
     throw new Error(`opto-sync: unsafe column name ${JSON.stringify(columnName)}`);
@@ -48,6 +59,7 @@ export async function typeOrmSyncMerge<T>(
 
   // 2. Merge in C
   const mergedString = mergeJson(currentRawJson, incomingRawJson, {
+    ...options,
     overrideCb: strategy.toNativeCallback(),
   });
   if (mergedString === null) {
