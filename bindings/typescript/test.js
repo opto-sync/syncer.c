@@ -2,7 +2,7 @@
 // NOTE: the override callback receives the FULL JSON path (e.g. "$.override"),
 // never the bare key — an equality check against a key name never fires.
 const assert = require('node:assert');
-const { mergeJson } = require('./index.js');
+const { mergeJson, version, ArrayStrategy } = require('./index.js');
 
 let failures = 0;
 function t(name, fn) {
