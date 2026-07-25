@@ -10,11 +10,29 @@
 //!
 //! Run with: cargo test
 
+use std::ffi::{c_void, CStr, CString};
+use std::ptr;
 use std::thread;
 
-use syncer::{
-    merge_json, try_merge_json_with_options, ArrayMergeStrategy, MergeOptions,
+use syncer_rs::{
+    merge_json, syncer_free, syncer_merge_json, try_merge_json_with_options, ArrayMergeStrategy,
+    MergeOptions,
 };
+
+/// Call the LEGACY C entry point `syncer_merge_json` with a NULL callback.
+/// This is the only code path in the core that touches its single
+/// `__thread` thread-local (the legacy callback slot).
+fn legacy_merge(j1: &str, j2: &str) -> String {
+    let c1 = CString::new(j1).expect("interior NUL");
+    let c2 = CString::new(j2).expect("interior NUL");
+    unsafe {
+        let p = syncer_merge_json(c1.as_ptr(), c2.as_ptr(), ptr::null());
+        assert!(!p.is_null(), "legacy merge returned NULL");
+        let s = CStr::from_ptr(p).to_string_lossy().into_owned();
+        syncer_free(p as *mut c_void);
+        s
+    }
+}
 
 fn conc_opts() -> MergeOptions {
     MergeOptions {
