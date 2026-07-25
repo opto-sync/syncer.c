@@ -79,12 +79,19 @@ static void gen_rows_array(sb_t* s, int depth) {
 }
 
 static void gen_object(sb_t* s, int depth) {
+    /* Unique keys per object: duplicate keys are outside the library's
+       documented contract (see syncer.h) — no real serializer emits them. */
+    uint32_t mask = 0;
     sb_put(s, "{");
     uint32_t n = 1 + rnd_below(4);
+    int emitted = 0;
     for (uint32_t i = 0; i < n; i++) {
-        if (i) sb_put(s, ",");
+        uint32_t k = rnd_below(8);
+        if (mask & (1u << k)) continue;
+        mask |= (1u << k);
+        if (emitted++) sb_put(s, ",");
         char key[16];
-        snprintf(key, sizeof(key), "\"k%u\":", (unsigned)rnd_below(8));
+        snprintf(key, sizeof(key), "\"k%u\":", (unsigned)k);
         sb_put(s, key);
         gen_value(s, depth + 1);
     }
