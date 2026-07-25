@@ -117,12 +117,23 @@ export function withSyncer(
               throw new Error('opto-sync merge failed: input was not valid JSON');
             }
 
+            const mergedValue = JSON.parse(mergedRaw); // Prisma requires a value, not raw SQL
+            const currentIsNull = current === null || current === undefined;
+
             // 3. Compare-and-set: only write if the row still holds `current`.
+            //    A currently-NULL value can only be matched with the generated
+            //    client's Prisma.DbNull; without it, fall back to a plain update.
+            if (currentIsNull && config.dbNull === undefined) {
+              await context.update({ where, data: { [fieldName]: mergedValue } });
+              return context.findUnique({ where });
+            }
+
             const result = await context.updateMany({
-              where: { ...where, [fieldName]: { equals: current === undefined ? null : current } },
-              data: {
-                [fieldName]: JSON.parse(mergedRaw) // Prisma requires a value, not raw SQL
-              }
+              where: {
+                ...where,
+                [fieldName]: { equals: currentIsNull ? config.dbNull : current }
+              },
+              data: { [fieldName]: mergedValue }
             });
 
             if (result.count > 0) {
