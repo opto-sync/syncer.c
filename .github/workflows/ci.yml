@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # core/ — 40 unit tests + randomized property tests, and the same suite again
+  # core/ — the unit suite + randomized property tests, and the same suite again
   # under ASan+UBSan. Matrixed so "core (sanitize)" failing is distinguishable
   # from "core (tests)" failing at a glance.
   # ---------------------------------------------------------------------------

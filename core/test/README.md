@@ -14,7 +14,7 @@ Four layers, cheapest first. Each catches a class the layer above cannot.
 ```bash
 cd core
 
-make                 # build + run test_syncer (41 tests) and prop_test
+make                 # build + run test_syncer (the unit suite) and prop_test
 make sanitize        # rebuild both under ASan+UBSan and run them
 make clean
 
