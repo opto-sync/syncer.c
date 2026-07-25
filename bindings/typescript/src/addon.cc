@@ -113,11 +113,12 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
 
     t_callback = prev_callback;
 
-    if (t_cb_threw) {
-        t_cb_threw = false;
+    if (env.IsExceptionPending()) {
+        /* The JS override threw during the merge. The exception is already
+           pending on the env; discard the merge result and return so it
+           propagates to the JS caller. */
         if (result) syncer_free(result);
-        Napi::Error::New(env, t_cb_error_msg).ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Value();
     }
 
     if (!result) {
