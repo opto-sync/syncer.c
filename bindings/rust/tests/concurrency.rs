@@ -165,11 +165,11 @@ fn concurrent_mixed_workloads_do_not_interfere() {
     }
 }
 
-/// Hammer the legacy callback-free path (`merge_json`, which routes through
-/// `syncer_merge_json` and its `__thread` callback slot with a NULL
-/// callback) on half the threads while the other half uses the extended
-/// options path. The thread-local must never make one path corrupt the
-/// other's results.
+/// Hammer the legacy callback-free path (raw `syncer_merge_json` with a
+/// NULL callback — the only path that touches the core's `__thread`
+/// callback slot) on half the threads while the other half uses
+/// `merge_json` / the extended options path. The thread-local must never
+/// make one path corrupt the other's results.
 #[test]
 fn legacy_path_and_ex_path_do_not_interfere() {
     const THREADS_PER_PATH: usize = 8;
@@ -177,8 +177,10 @@ fn legacy_path_and_ex_path_do_not_interfere() {
 
     let legacy_j1 = r#"{"a": 1, "b": {"c": 2}}"#;
     let legacy_j2 = r#"{"b": {"d": 3}, "e": 4}"#;
-    let legacy_expected = merge_json(legacy_j1, legacy_j2);
+    let legacy_expected = legacy_merge(legacy_j1, legacy_j2);
     assert!(!legacy_expected.is_empty(), "legacy reference merge failed");
+    // The legacy path and the safe wrapper must agree on the same inputs.
+    assert_eq!(legacy_expected, merge_json(legacy_j1, legacy_j2));
 
     let ex_opts = conc_opts();
     let ex_expected =
