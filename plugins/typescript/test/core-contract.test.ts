@@ -52,7 +52,7 @@ export async function register() {
       JSON.stringify({ a: { b: { c: 2 } } }),
       {
         ...POLICY,
-        overrideCb: (p, v1, v2) => {
+        overrideCb: (p: string, v1: string, v2: string) => {
           seen.push(p);
           return p.endsWith('.c') ? JSON.stringify(JSON.parse(v1) + JSON.parse(v2)) : undefined;
         },
@@ -74,7 +74,7 @@ export async function register() {
         JSON.stringify({ tags: ['b'] }),
         {
           arrayStrategy: strategy,
-          overrideCb: (p, _v1, _v2) => {
+          overrideCb: (p: string, _v1: string, _v2: string) => {
             seen.push(p);
             return JSON.stringify(['OVERRIDDEN']);
           },
@@ -91,7 +91,7 @@ export async function register() {
       JSON.stringify({ tags: ['b'] }),
       {
         arrayStrategy: ArrayStrategy.REPLACE,
-        overrideCb: (p) => {
+        overrideCb: (p: string) => {
           seen.push(p);
           return JSON.stringify(['OVERRIDDEN']);
         },
