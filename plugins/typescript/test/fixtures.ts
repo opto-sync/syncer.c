@@ -25,18 +25,23 @@ export class PassthroughStrategy extends BaseMergeStrategy<any> {
 }
 
 /**
- * A strategy that must demonstrably reach the C core: it unions the `tags`
- * array (overriding whatever the configured arrayStrategy would do) and
- * averages the `embedding` vector.
+ * A strategy that must demonstrably reach the C core.
+ *
+ * IMPORTANT — the override callback is NOT a universal hook. Verified against
+ * core v0.2.0 (see test/core-contract.test.ts):
+ *   - it IS consulted for scalar and object key conflicts, at any depth,
+ *     INCLUDING keys inside keyed-array elements that were matched and merged;
+ *   - it is NOT consulted for ARRAY-valued keys once arrayStrategy is UNION(2)
+ *     or MERGE_BY_KEY(4) — the core reconciles those arrays itself.
+ * So this strategy deliberately targets a nested SCALAR (`accent`) and a scalar
+ * INSIDE a keyed-array element (`qty`, summed like an additive counter).
  */
 export class OverrideStrategy extends BaseMergeStrategy<any> {
   public calls: string[] = [];
   handleConflict(key: string, v1: any, v2: any): any {
     this.calls.push(String(key));
-    if (key === 'tags') return [...new Set([...(v1 ?? []), ...(v2 ?? [])])].sort();
-    if (key === 'embedding') {
-      return (v1 as number[]).map((val, i) => (val + (v2 as number[])[i]) / 2);
-    }
+    if (key === 'accent') return `override(${v1}->${v2})`;
+    if (key === 'qty') return Number(v1) + Number(v2); // additive counter
     return undefined;
   }
 }
