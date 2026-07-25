@@ -19,15 +19,25 @@ export function syncedJsonb<T>(name: string, strategy: BaseMergeStrategy<T>) {
     dataType() {
       return 'jsonb';
     },
-    // Convert from Database (string) to JS Object
-    fromDriver(value: string): T {
-      // Zero-deserialization approach: we delay parsing if we are just merging,
-      // but Drizzle's fromDriver typically requires the final object.
-      return JSON.parse(value);
+    // Convert from Database to JS object.
+    //
+    // node-postgres registers a type parser for json/jsonb (OIDs 114/3802) and
+    // therefore hands us an ALREADY-PARSED value, not text. A blind
+    // JSON.parse() here stringifies that object to "[object Object]" and throws
+    // `SyntaxError: Unexpected token o in JSON at position 1` on every read.
+    // Only parse when the driver actually gave us text (e.g. a driver with JSON
+    // parsing disabled, or a `::text` projection).
+    fromDriver(value: string | T): T {
+      return typeof value === 'string' ? (JSON.parse(value) as T) : value;
     },
-    // Convert from JS Object to Database (string)
+    // Convert from JS object to the driver representation.
+    //
+    // A string is passed through verbatim so the zero-deserialization path can
+    // hand `performZeroDeserializationMerge`'s raw output straight to an
+    // insert/update without a stringify -> parse -> stringify round trip.
+    // Postgres casts the text parameter to jsonb on the way in.
     toDriver(value: T): string {
-      return JSON.stringify(value);
+      return typeof value === 'string' ? value : JSON.stringify(value);
     }
   })(name);
 }
