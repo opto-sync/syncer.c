@@ -586,6 +586,39 @@ static yyjson_mut_val* merge_leaf(
     return yyjson_val_mut_copy(doc, v2);
 }
 
+/* Consult the override callback for a CONTAINER node where both sides are
+ * present, returning the replacement value or NULL to fall through to the
+ * default merge (no callback, the callback declined, or it returned
+ * unparseable JSON — the last case must not drop v2's subtree).
+ *
+ * Used for objects AND for arrays under every non-REPLACE strategy. Arrays
+ * used to skip this entirely, so an override registered for an array path was
+ * silently ignored whenever a strategy other than REPLACE was in effect —
+ * which is the default policy across opto-sync. That made overrides
+ * unpredictable: the same callback fired for `$.profile` but not for
+ * `$.profile.tags`. */
+static yyjson_mut_val* try_override_node(yyjson_mut_doc*               doc,
+                                         const syncer_merge_options_t* opts,
+                                         path_buf_t*                   path,
+                                         yyjson_mut_val*               v1,
+                                         yyjson_val*                   v2)
+{
+    if (!opts || !opts->override_cb) return NULL;
+    char* s1 = yyjson_mut_val_write(v1, 0, NULL);
+    char* s2 = yyjson_val_write(v2, 0, NULL);
+    /* Never hand the callback NULL serializations. */
+    char* res = (s1 && s2) ? opts->override_cb(path->buf, s1, s2) : NULL;
+    free(s1);
+    free(s2);
+    if (!res) return NULL;
+    yyjson_doc* pd = yyjson_read(res, strlen(res), 0);
+    free(res);
+    if (!pd) return NULL;
+    yyjson_mut_val* mv = yyjson_val_mut_copy(doc, yyjson_doc_get_root(pd));
+    yyjson_doc_free(pd);
+    return mv;
+}
+
 /* Returns false when the merge had to abort (allocation failure); the caller
  * must then discard the partially merged doc and report an error. */
 static bool do_merge(
