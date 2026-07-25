@@ -63,6 +63,20 @@ extern "C" {
     ) -> *mut c_char;
 
     pub fn syncer_free(ptr: *mut c_void);
+
+    pub fn syncer_version() -> *const c_char;
+}
+
+/// Version of the statically linked C core as `"major.minor.patch"`.
+///
+/// The C string is static and never freed.
+pub fn version() -> &'static str {
+    unsafe {
+        // The core guarantees a static, NUL-terminated ASCII string.
+        CStr::from_ptr(syncer_version())
+            .to_str()
+            .expect("syncer_version() returned non-UTF-8")
+    }
 }
 
 pub fn merge_json(json1: &str, json2: &str) -> String {
