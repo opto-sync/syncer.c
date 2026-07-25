@@ -16,7 +16,7 @@ defmodule OptoSyncEcto.PostgresIntegrationTest do
   alias OptoSyncEcto.Test.Repo
   alias OptoSyncEcto.Test.SyncDoc
 
-  @default_url "postgres://postgres:postgres@localhost:55432/postgres"
+  @default_url "postgres://postgres:postgres@localhost:55433/postgres"
 
   setup_all do
     url = System.get_env("PG_URL", @default_url)

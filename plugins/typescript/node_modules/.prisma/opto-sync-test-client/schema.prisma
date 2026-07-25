@@ -1,0 +1,18 @@
+// Minimal Prisma schema used ONLY by the opto-sync plugin integration test.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/opto-sync-test-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("OPTO_SYNC_TEST_PG")
+}
+
+model PrismaDoc {
+  id    String  @id
+  doc   Json
+  label String?
+
+  @@map("prisma_docs")
+}

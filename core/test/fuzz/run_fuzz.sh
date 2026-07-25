@@ -193,7 +193,7 @@ if [ "$MODE" = "repro" ]; then
     name="${base%%-*}"
     case "$name" in fuzz) name="$(echo "$base" | cut -d- -f1,2)";; esac
     banner "REPRO $base  with $name"
-    build_harness "$name" "fuzzer,address,undefined" "_asan_ubsan" || exit 1
+    build_harness "$name" "fuzzer-no-link,address,undefined" "fuzzer,address,undefined" "_asan_ubsan" || exit 1
     "$WORK/bin/${name}_asan_ubsan" "$art"
     exit $?
 fi
@@ -204,10 +204,10 @@ fi
 if [ "$MODE" = "all" ] || [ "$MODE" = "fuzz" ]; then
     banner "BUILD harnesses"
     for h in $HARNESSES; do
-        build_harness "$h" "fuzzer,address,undefined" "_asan_ubsan" || FAILED=1
+        build_harness "$h" "fuzzer-no-link,address,undefined" "fuzzer,address,undefined" "_asan_ubsan" || FAILED=1
         # Second variant without UBSan: ASan+LSan alone, so a leak report can
         # never be confused with (or masked by) a UBSan diagnostic.
-        build_harness "$h" "fuzzer,address"           "_asan_lsan" || FAILED=1
+        build_harness "$h" "fuzzer-no-link,address" "fuzzer,address" "_asan_lsan" || FAILED=1
     done
 
     for h in $HARNESSES; do
@@ -244,8 +244,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "leaks" ]; then
 
     for suite in test_syncer prop_test; do
         echo "--- building $suite (ASan+UBSan+LSan) ---"
-        clang -g -O1 -fno-omit-frame-pointer \
-              -fsanitize=address,undefined -Wall -Wextra \
+        clang $BASE_CFLAGS -fsanitize=address,undefined \
               -I$WORK/include -I$WORK/src \
               -o "$WORK/bin/${suite}_lsan" \
               "$WORK/test/${suite}.c" $CORE_SRCS || { FAILED=1; continue; }

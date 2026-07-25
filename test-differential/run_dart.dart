@@ -16,8 +16,14 @@ void main(List<String> args) {
     stderr.writeln('usage: dart run run_dart.dart <input.jsonl> <output.jsonl>');
     exit(2);
   }
-  final libPath = Platform.environment['SYNCER_LIB_PATH'] ??
-      '../core/build/libsyncer.dylib';
+  // Platform-dependent library name; SYNCER_LIB_PATH overrides.
+  final libName = Platform.isMacOS
+      ? 'libsyncer.dylib'
+      : Platform.isWindows
+          ? 'syncer.dll'
+          : 'libsyncer.so';
+  final libPath =
+      Platform.environment['SYNCER_LIB_PATH'] ?? '../core/build/$libName';
   final syncer = Syncer(libPath);
   final options = MergeOptions(
     arrayStrategy: ArrayMergeStrategy.mergeByKey, // 4

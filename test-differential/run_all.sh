@@ -5,7 +5,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 CORE=../core
-export SYNCER_LIB_PATH="$PWD/$CORE/build/libsyncer.dylib"
+
+# Shared-library name is platform-dependent, and an already-exported
+# SYNCER_LIB_PATH (as CI sets) must win rather than being clobbered.
+if [ -z "${SYNCER_LIB_PATH:-}" ]; then
+  case "$(uname -s)" in
+    Darwin) CORE_LIB=libsyncer.dylib ;;
+    MINGW*|MSYS*|CYGWIN*) CORE_LIB=syncer.dll ;;
+    *) CORE_LIB=libsyncer.so ;;
+  esac
+  export SYNCER_LIB_PATH="$PWD/$CORE/build/$CORE_LIB"
+fi
 
 echo "== [0/4] toolchain versions =="
 node --version
