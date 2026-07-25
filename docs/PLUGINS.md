@@ -347,7 +347,7 @@ db.Use(&syncer_gorm.SyncerPlugin{
         ArrayMatchKeys:     "id",
         ResolveByTimestamp: true,
         LwwKeys:            "updatedAt,syncedAt",
-        FwwKeys:            "createdAt",
+        // No FwwKeys — FWW is a node-level veto, see "Why there is no FWW key".
     },
     // Columns: []string{"doc"},  // default: every field whose DataType is json/jsonb
 })
