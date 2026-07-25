@@ -78,6 +78,16 @@ filter the harness would report a steady stream of non-bugs. Out-of-contract
 inputs are still fuzzed hard for *memory safety* by the other three harnesses,
 and seeds named `oob_*` in the corpora exist specifically to keep them covered.
 
+The filter also skips documents nested deeper than `FILTER_MAX_DEPTH` (512) or
+with more than 64 members in a single container, to keep itself cheap — so very
+deep or very wide documents are covered for memory safety but not for the
+idempotency property. `prop_test.c` and `test_syncer.c`'s `test_extreme_depth`
+carry that end.
+
+It also treats a `NULL` return from a merge of two *parseable* documents as a
+finding: the engine only returns `NULL` on parse failure or allocation failure,
+and this harness injects neither.
+
 ## Seeds and dictionary
 
 `gen_corpus.py` regenerates all four corpora from one list of document *pairs*:
