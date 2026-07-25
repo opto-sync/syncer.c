@@ -1,9 +1,9 @@
 [package]
 name = "opto-sync-diesel"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "opto-sync jsonb reconciliation helpers for Diesel workflows"
 
 [dependencies]
-diesel = { version = "2.1", features = ["postgres", "serde_json"] }
 serde_json = "1.0"
-opto-sync-syncer = { path = "../../../bindings/rust" }
+syncer-rs = { path = "../../../bindings/rust" }
