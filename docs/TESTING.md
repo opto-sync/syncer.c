@@ -321,6 +321,19 @@ docker build -f Dockerfile.test -t opto-sync-beam-test .
 `go test -count=1` and `cache: false` are not optional — see
 [COMPATIBILITY.md](./COMPATIBILITY.md#stale-artifact-hazard).
 
+#### The BEAM version doctest
+
+The BEAM suite currently reports `4 doctests, 35 tests, 1 failure`. The failure is
+a doctest in `bindings/beam/lib/syncer.ex` that pins the version **exactly**:
+
+```
+iex> Syncer.version()
+"0.2.0"          # left: "0.2.1", right: "0.2.0"
+```
+
+It is a live example of the trap in §10: an exact pin fails on every patch bump.
+The fix is a lower-bound assertion, not a new literal.
+
 ### The concurrency suites
 
 These exist because the core keeps exactly one piece of mutable state: a
