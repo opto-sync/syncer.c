@@ -413,10 +413,13 @@ Consequences for strategy choice:
 Older comments in this tree say the opposite. **They are stale.** Verified three
 ways:
 
-- `core/src/syncer.c`: `try_override_node` is called from three sites — the root
-  (line 672, including a root-level array at path `$`), the object-value leaf
-  path (763), and the object-value composite path (788) — *before* the array
-  strategy descends. Nothing in the array handling skips it.
+- `core/src/syncer.c`: every node where both sides are present reaches the
+  callback. `try_override_node` runs at the root (line 672, including a
+  root-level array at path `$`), for an object/object pair (763), and — this is
+  the 0.2.1 fix — for an **array/array pair under any non-`REPLACE` strategy**
+  (788), *before* the strategy descends. Arrays under `REPLACE`, scalars, and
+  type mismatches go through `merge_leaf` (560), which invokes `override_cb`
+  inline. Nothing in the array handling skips the callback any more.
 - `core/test/test_syncer.c::test_override_reaches_arrays` loops over **all five**
   strategies and asserts the callback fired exactly once for the array node and
   that the host's replacement won. It passes: `cd core && make` →
