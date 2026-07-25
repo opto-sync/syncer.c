@@ -7,7 +7,8 @@
  *   • Full JSON-path tracking passed to override callbacks
  *     (e.g. "$.users[0].profile.address").
  *   • Circular-reference detection via a visited-pair set.
- *   • Four configurable array merge strategies.
+ *   • Five configurable array merge strategies, including identity-keyed
+ *     reconciliation of records inside arrays.
  *   • Backwards-compatible legacy API wrapping the extended API.
  */
 
