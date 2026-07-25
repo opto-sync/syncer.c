@@ -179,7 +179,7 @@ export async function register() {
   /* ---- defect regression tests ---- */
 
   test('DEFECT: a missing row throws instead of silently pretending to persist', async () => {
-    await resetTable(TABleOrSelf());
+    await resetTable(TABLE);
     await rejects(
       () => sync('does-not-exist'),
       /no row in "kysely_docs"/,
