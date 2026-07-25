@@ -522,7 +522,7 @@ back to the id". Identity is value-normalized: `42` matches `"42"`. The contract
 is one identity value per array; duplicates bind to the first match and make
 results unstable.
 
-### Why `MERGE_BY_KEY` + LWW `updatedAt,syncedAt` + FWW `createdAt` is the default
+### Why `MERGE_BY_KEY` + LWW `updatedAt,syncedAt` + no FWW key is the default
 
 - **`MERGE_BY_KEY`** is the only strategy that reconciles *records* inside a
   jsonb column: a stale element is rejected while a fresh sibling in the same
