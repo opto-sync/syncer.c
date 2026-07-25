@@ -80,6 +80,8 @@ jobs:
           - lang: dart
             dart: true
             core_shared_lib: true
+          - lang: wasm
+            node: true
     steps:
       - uses: actions/checkout@v4
 
@@ -158,6 +160,18 @@ jobs:
         working-directory: bindings/rust
         run: cargo test
 
+      # bindings/wasm ships committed dist/ artifacts, so the suite runs against
+      # exactly what a browser consumer would load. It does NOT rebuild them
+      # (that needs the emscripten docker image); a core change therefore
+      # requires rerunning bindings/wasm/build.sh and committing the result, and
+      # this leg's version assertion is what catches a forgotten rebuild.
+      - name: bindings/wasm — test committed artifacts
+        if: matrix.lang == 'wasm'
+        working-directory: bindings/wasm
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
       - name: bindings/go — go test -race ./...
         if: matrix.lang == 'go'
         working-directory: bindings/go
@@ -187,6 +201,19 @@ jobs:
     name: plugins (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Postgres for the TypeScript integration leg. Harmless for the other legs.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: plugintest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d plugintest"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     strategy:
       fail-fast: false
       matrix:
@@ -238,13 +265,37 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: cargo test
 
-      # `npx tsc` would resolve the unrelated deprecated "tsc" npm package;
-      # `-p typescript` forces the real compiler. plugins/typescript has no
-      # package.json, so there is nothing to install first.
-      - name: plugins/typescript — type-check (tsc --noEmit)
+      # plugins/typescript DOES have a package.json (@opto-sync/orm-plugins)
+      # with the real ORM packages as devDependencies, so install first.
+      - name: plugins/typescript — install
         if: matrix.name == 'typescript'
         working-directory: plugins/typescript
-        run: npx -y -p typescript@5 tsc -p tsconfig.json
+        run: npm ci || npm install
+
+      # Two configs, both load-bearing:
+      #   tsconfig.json      checks against types/orm-stubs.d.ts (no ORM install)
+      #   tsconfig.real.json checks against the REAL ORM packages — this is the
+      #                      one that caught the Kysely result-type defect the
+      #                      stubs hid by returning `any`.
+      - name: plugins/typescript — type-check against stubs
+        if: matrix.name == 'typescript'
+        working-directory: plugins/typescript
+        run: npx tsc -p tsconfig.json
+
+      - name: plugins/typescript — type-check against the real ORM packages
+        if: matrix.name == 'typescript'
+        working-directory: plugins/typescript
+        run: npx tsc -p tsconfig.real.json
+
+      # The integration tests need a Postgres with a real jsonb column; the
+      # service below gives the job one. Without it these plugins are only
+      # type-checked, and every lost-update/locking guarantee is unverified.
+      - name: plugins/typescript — integration tests (real ORMs + Postgres)
+        if: matrix.name == 'typescript'
+        working-directory: plugins/typescript
+        env:
+          OPTO_SYNC_TEST_PG: postgres://test:test@localhost:5432/plugintest
+        run: npm test
 
       - name: plugins/go/gorm — go build && go vet
         if: matrix.name == 'go-gorm'
@@ -273,6 +324,42 @@ jobs:
   # that holds compiled output: setup-go cache is off, no cargo target/ cache,
   # and no node_modules cache. Do not "optimize" that away.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # bindings/beam — Rustler NIF over syncer-rs. Needs both Elixir and Rust, so
+  # it uses the elixir container plus rustup rather than the matrix above.
+  # ---------------------------------------------------------------------------
+  beam:
+    name: bindings/beam (elixir NIF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: elixir:1.17-otp-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (Rustler builds the NIF)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: bindings/beam — mix test
+        working-directory: bindings/beam
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix test
+
+      - name: plugins/beam/ecto — mix test (hermetic, no DB)
+        working-directory: plugins/beam/ecto
+        run: |
+          mix deps.get
+          mix test
+
+      - name: Which suite failed
+        if: failure()
+        run: echo "::error title=beam::bindings/beam or plugins/beam/ecto failed"
+
   differential:
     name: test-differential (C/TS/Dart/Rust/Go byte-identity)
     runs-on: ubuntu-latest

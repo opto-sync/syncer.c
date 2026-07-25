@@ -96,3 +96,12 @@ commit as any behavior change.
   under `MERGE_BY_KEY`, are explicitly out of contract.
 - Override callbacks are unsupported in the Rust, Go, and BEAM bindings by
   design (re-entering a managed runtime mid-merge).
+- **Interior NUL bytes in an input string behave inconsistently per binding.**
+  Rust and BEAM reject such input; TypeScript, WebAssembly, Dart, and Go pass a
+  C string and therefore silently truncate at the NUL, so
+  `{"a":1}\0 junk` merges as `{"a":1}`. JSON is text and a NUL byte in a
+  document is already malformed, so this is unlikely in practice — but it is
+  unverified by tests in the truncating four, and callers handling untrusted
+  bytes should validate before merging. (An *escaped* `\u0000` inside a JSON
+  string is different and fully supported; see the regression test
+  `test_nul_in_key_not_truncated`.)

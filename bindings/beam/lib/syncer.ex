@@ -1,7 +1,7 @@
 defmodule Syncer do
   @moduledoc """
   Deep JSON merge for the BEAM, backed by the [syncer.c](../../core) engine
-  (v0.2.0) through a Rustler NIF over the [`syncer-rs`](../rust) crate.
+  (v0.2.1+) through a Rustler NIF over the [`syncer-rs`](../rust) crate.
 
   Both sides of a merge are **JSON text** (`t:binary/0`), not decoded terms:
   the whole point is to hand a stored document and an incoming document to the
@@ -170,11 +170,17 @@ defmodule Syncer do
     )
   end
 
-  @doc """
+  # ~S: a plain """ heredoc processes `\d` as an escape and collapses it to
+  # `d`, which silently turns the regex below into `^d+.d+.d+$`.
+  @doc ~S"""
   Version of the statically linked C core, as `"major.minor.patch"`.
 
-      iex> Syncer.version()
-      "0.2.0"
+  Matched as a shape, not pinned to a literal: an exact pin breaks on every
+  patch bump while still passing against a stale artifact reporting an older
+  version.
+
+      iex> Syncer.version() =~ ~r/^\d+\.\d+\.\d+$/
+      true
   """
   @spec version() :: binary()
   def version, do: Native.version()

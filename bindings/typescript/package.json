@@ -1,6 +1,6 @@
 {
   "name": "@opto-sync/syncer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript bindings for syncer.c",
   "main": "index.js",
   "types": "index.d.ts",

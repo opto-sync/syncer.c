@@ -1,5 +1,5 @@
 /**
- * Pins the parts of the core v0.2.0 contract that the ORM plugins (and the
+ * Pins the parts of the core contract that the ORM plugins (and the
  * BaseMergeStrategy adapter) depend on. No database involved — these are the
  * invariants the DB-backed tests assume, so if the core changes shape the
  * failure points here instead of looking like an ORM bug.
@@ -12,8 +12,11 @@ import { suite, test, ok, equal, deepEqual } from './harness';
 export async function register() {
   suite('core contract (assumptions the ORM plugins rely on)');
 
-  test('core is v0.2.0 and exposes MERGE_BY_KEY = 4', async () => {
-    equal(version(), '0.2.0', 'native core version');
+  test('core version is supported and exposes MERGE_BY_KEY = 4', async () => {
+    // Lower bound, not an exact pin: an exact pin breaks on every patch bump
+    // and still passes against a stale artifact reporting an older version.
+    const [maj, min, patch] = version().split('.').map(Number);
+    ok(maj > 0 || min > 2 || (min === 2 && patch >= 1), `unexpected core version ${version()}`);
     equal(ArrayStrategy.MERGE_BY_KEY, 4, 'MERGE_BY_KEY enum value');
     equal(POLICY.arrayStrategy, 4, 'canonical policy uses MERGE_BY_KEY');
   });
@@ -62,12 +65,20 @@ export async function register() {
     equal(JSON.parse(out).a.b.c, 3, 'override return value is honoured at depth 3');
   });
 
-  test('override callback is NOT consulted for arrays under UNION/MERGE_BY_KEY', async () => {
-    // Documented gap: the `UserProfileMerger` example in BaseMergeStrategy.ts
-    // overrides `tags` and `embedding` (both arrays). Under the canonical
-    // MERGE_BY_KEY policy that override never fires — the core reconciles arrays
-    // itself. Plugin users must not rely on array overrides with this policy.
-    for (const strategy of [ArrayStrategy.UNION, ArrayStrategy.MERGE_BY_KEY]) {
+  test('override callback IS consulted for arrays under every strategy', async () => {
+    // This used to assert the opposite. Before core 0.2.1 arrays skipped the
+    // override entirely under any non-REPLACE strategy, so an override
+    // registered for an array path silently did nothing under the canonical
+    // MERGE_BY_KEY policy — which made the `UserProfileMerger` example in
+    // BaseMergeStrategy.ts (it overrides `tags` and `embedding`, both arrays) a
+    // no-op. Objects, arrays and root arrays now share one code path.
+    for (const strategy of [
+      ArrayStrategy.REPLACE,
+      ArrayStrategy.APPEND,
+      ArrayStrategy.UNION,
+      ArrayStrategy.MERGE_BY_INDEX,
+      ArrayStrategy.MERGE_BY_KEY,
+    ]) {
       const seen: string[] = [];
       const out = mergeJson(
         JSON.stringify({ tags: ['a'] }),
@@ -80,25 +91,21 @@ export async function register() {
           },
         } as any,
       )!;
-      ok(!seen.includes('$.tags'), `arrayStrategy=${strategy}: callback NOT called for the array key`);
-      deepEqual(JSON.parse(out).tags, ['a', 'b'], `arrayStrategy=${strategy}: core reconciled the array itself`);
+      ok(seen.includes('$.tags'), `arrayStrategy=${strategy}: callback called for the array key`);
+      deepEqual(
+        JSON.parse(out).tags,
+        ['OVERRIDDEN'],
+        `arrayStrategy=${strategy}: the host's decision wins over the strategy`,
+      );
     }
 
-    // Under REPLACE (the default) the array override DOES fire.
-    const seen: string[] = [];
-    const out = mergeJson(
+    // Declining (returning null) must leave the configured strategy intact.
+    const declined = mergeJson(
       JSON.stringify({ tags: ['a'] }),
       JSON.stringify({ tags: ['b'] }),
-      {
-        arrayStrategy: ArrayStrategy.REPLACE,
-        overrideCb: (p: string) => {
-          seen.push(p);
-          return JSON.stringify(['OVERRIDDEN']);
-        },
-      } as any,
+      { arrayStrategy: ArrayStrategy.UNION, overrideCb: () => null } as any,
     )!;
-    ok(seen.includes('$.tags'), 'arrayStrategy=REPLACE: callback IS called for the array key');
-    deepEqual(JSON.parse(out).tags, ['OVERRIDDEN'], 'arrayStrategy=REPLACE: array override applies');
+    deepEqual(JSON.parse(declined).tags, ['a', 'b'], 'declining leaves UNION behavior unchanged');
   });
 
   test('override callback fires for keys inside MATCHED keyed-array elements', async () => {

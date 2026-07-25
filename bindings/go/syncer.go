@@ -58,10 +58,10 @@ type Options struct {
 	// using LwwKeys / FwwKeys.
 	ResolveByTimestamp bool
 	// LwwKeys is a comma-separated list of Last-Write-Wins timestamp keys,
-	// e.g. "updatedAt,syncedAt". Empty = none.
+	// e.g. "updatedAt,syncedAt". Empty string means "unset", which the core reads as its default ("updatedAt" for LWW, "id" for match keys) — not "no keys".
 	LwwKeys string
 	// FwwKeys is a comma-separated list of First-Write-Wins timestamp keys,
-	// e.g. "createdAt". Empty = none.
+	// e.g. "createdAt". Empty string means "unset", which the core reads as its default ("updatedAt" for LWW, "id" for match keys) — not "no keys".
 	FwwKeys string
 	// ArrayMatchKeys is a comma-separated list of identity keys for
 	// ArrayMergeByKey, e.g. "uuid,id". The first listed key present in an

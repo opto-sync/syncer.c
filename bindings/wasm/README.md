@@ -188,7 +188,7 @@ design — have JS lay out a `syncer_merge_options_t` in the heap and pass a
 pointer — is a silent-corruption hazard: the struct mixes 4-byte wasm32
 pointers, an enum, a `uint32_t` and two `bool`s, so its offsets and tail
 padding are the compiler's business, and it has already grown once
-(`array_match_keys` arrived in core v0.2.0). A JS-side layout that drifts by one
+(`array_match_keys` arrived in core v0.2.1). A JS-side layout that drifts by one
 field does not crash; it feeds the core a garbage `lww_keys` pointer and merges
 *wrongly*.
 

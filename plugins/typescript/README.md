@@ -1,7 +1,7 @@
 # opto-sync ORM plugins (TypeScript)
 
 Thin adapters that route an ORM's JSONB column writes through the `syncer.c`
-core (v0.2.0) so a concurrent update **reconciles** with the stored document
+core (v0.2.1) so a concurrent update **reconciles** with the stored document
 instead of overwriting it.
 
 All four adapters are covered by **real integration tests against a real
@@ -57,11 +57,12 @@ These are core behaviours, not plugin bugs. They are pinned by
    `createdAt` gates the whole document. Put timestamps at the level you
    actually want reconciled (e.g. on each array element), not only at the root.
 
-2. **A custom strategy's override callback is NOT called for arrays** once
-   `arrayStrategy` is `UNION` (2) or `MERGE_BY_KEY` (4) — the core reconciles
-   those arrays itself. The override *is* called for scalar and object keys at
-   any depth, **including keys inside keyed-array elements that were matched and
-   merged**. Under `REPLACE` (the default) array keys *do* reach the callback.
+2. **A custom strategy's override callback reaches arrays too** (core 0.2.1+).
+   It is consulted for every node where both sides are present — scalars,
+   objects, arrays, and a root-level array — before the configured strategy
+   descends. Returning `null` declines and leaves the strategy's own behavior
+   intact. Before 0.2.1 arrays skipped the callback under any non-`REPLACE`
+   strategy, which silently disabled array overrides under the canonical policy.
 
    Consequence: the `UserProfileMerger` example in
    `bindings/typescript/BaseMergeStrategy.ts` overrides `tags` and `embedding`,

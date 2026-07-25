@@ -243,6 +243,7 @@ int main(void) {
     }
 
     printf("prop_test: all properties held over %d idempotency pairs, "
-           "500x5 strategy runs, 1000 corruption runs\n", checked);
+           "600x4 per-strategy idempotency runs, 500x5 strategy runs, "
+           "1000 corruption runs\n", checked);
     return 0;
 }

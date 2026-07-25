@@ -133,6 +133,11 @@ identity and their own timestamps.
 - Returns `NULL` when either input is not valid JSON. `NULL` is never an empty
   string, and bindings surface it as `null`/`None`/`{:error, _}`/an exception
   rather than silently yielding `""`.
+
+  Two backwards-compatibility shims are the documented exceptions: Dart's
+  `Syncer.merge` and Rust's `merge_json`/`merge_json_with_options` return `""`
+  on failure. Use `Syncer.tryMerge` and `try_merge_json_with_options` to get the
+  unambiguous `null`/`None`.
 - A one-sided merge (`NULL` for one input) validates and normalizes the side
   that is present.
 

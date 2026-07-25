@@ -40,6 +40,9 @@ new element is appended:
 
 ## Documentation
 
+Start at **[docs/README.md](docs/README.md)** — the index across all three repos.
+The two to read first:
+
 - **[docs/MERGE_SEMANTICS.md](docs/MERGE_SEMANTICS.md)** — the contract: object
   and array rules, all five array strategies, timestamp comparison, when
   concurrent writes converge (and when they provably don't), documented
@@ -47,6 +50,11 @@ new element is appended:
 - **[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)** — versioning, the ABI rules
   for the options struct, and the stale-artifact hazard. **Read this before
   adding an option.**
+
+Also: [BINDINGS](docs/BINDINGS.md) · [PLUGINS](docs/PLUGINS.md) ·
+[TESTING](docs/TESTING.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) ·
+[SECURITY](docs/SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) ·
+[CHANGELOG](CHANGELOG.md)
 
 ## Layout
 
@@ -79,7 +87,7 @@ the options struct (and are therefore ABI-sensitive).
 ## Building and testing
 
 ```sh
-cd core && make            # 44 unit tests + randomized property tests
+cd core && make            # unit suite + randomized property tests
 cd core && make sanitize   # the same suites under ASan + UBSan
 ```
 
@@ -111,7 +119,8 @@ Deeper layers:
   the merge aborts and returns `NULL` rather than emitting a partial document.
 - **`NULL` means failure, never empty.** Every binding surfaces it as
   `null`/`None`/`{:error, _}`/an exception, so an unparseable input can never be
-  mistaken for a successful empty merge.
+  mistaken for a successful empty merge. (Two documented compat shims aside —
+  see [MERGE_SEMANTICS.md](docs/MERGE_SEMANTICS.md).)
 
 ## Status
 

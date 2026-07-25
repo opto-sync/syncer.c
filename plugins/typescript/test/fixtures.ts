@@ -27,12 +27,13 @@ export class PassthroughStrategy extends BaseMergeStrategy<any> {
 /**
  * A strategy that must demonstrably reach the C core.
  *
- * IMPORTANT — the override callback is NOT a universal hook. Verified against
- * core v0.2.0 (see test/core-contract.test.ts):
- *   - it IS consulted for scalar and object key conflicts, at any depth,
- *     INCLUDING keys inside keyed-array elements that were matched and merged;
- *   - it is NOT consulted for ARRAY-valued keys once arrayStrategy is UNION(2)
- *     or MERGE_BY_KEY(4) — the core reconciles those arrays itself.
+ * The override callback IS a universal hook as of core 0.2.1. Verified in
+ * test/core-contract.test.ts:
+ *   - consulted for scalar and object key conflicts at any depth, INCLUDING
+ *     keys inside keyed-array elements that were matched and merged;
+ *   - consulted for ARRAY-valued keys under every strategy, including UNION(2)
+ *     and MERGE_BY_KEY(4). Before 0.2.1 arrays skipped it entirely under any
+ *     non-REPLACE strategy, so an array override silently did nothing.
  * So this strategy deliberately targets a nested SCALAR (`accent`) and a scalar
  * INSIDE a keyed-array element (`qty`, summed like an additive counter).
  */

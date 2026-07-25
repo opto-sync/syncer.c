@@ -1,7 +1,7 @@
 # BEAM Ecosystem Binding (Elixir / Erlang / Gleam)
 
 Deep JSON merge for the BEAM, backed by the [syncer.c](../../core) engine
-(v0.2.0). The binding is a [Rustler](https://github.com/rusterlium/rustler)
+(v0.2.1). The binding is a [Rustler](https://github.com/rusterlium/rustler)
 NIF wrapping the [`syncer-rs`](../rust) crate, which compiles the C core
 statically via its `build.rs` — so there is **no shared library to install**
 and no `LD_LIBRARY_PATH` to set. What you need at build time is a C compiler,
@@ -15,7 +15,7 @@ exception in the calling process instead of taking down the whole VM.
 | Mix app | `:opto_sync_nif` |
 | Public module | `Syncer` |
 | NIF crate | [`native/syncer_nif`](native/syncer_nif) |
-| Core version | `0.2.0` (`Syncer.version/0`) |
+| Core version | `0.2.1` (`Syncer.version/0`) |
 | Status | **implemented** — 35 tests + 4 doctests green |
 
 ## Installation
@@ -43,7 +43,7 @@ list is a plain proplist, so nothing Elixir-specific is required.
 
 ```elixir
 Syncer.version()
-#=> "0.2.0"
+#=> "0.2.1"
 
 Syncer.merge(base_json, incoming_json, opts \\ [])
 #=> {:ok, merged_json} | {:error, :merge_failed}
