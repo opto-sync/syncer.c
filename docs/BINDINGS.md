@@ -116,10 +116,24 @@ the `""` behavior (`bindings/dart/bin/test.dart`,
 code; `MERGE_SEMANTICS.md`'s "never an empty string" guarantee applies to the
 `try*` forms.
 
-Additional failure modes worth knowing: Rust returns `None` (and Go/BEAM report
-failure) for a string containing an **interior NUL byte**, because it cannot
-cross the C string boundary. The BEAM NIF takes binaries, not `String`, so
-non-UTF-8 input is `{:error, :merge_failed}` rather than an `ArgumentError`.
+The BEAM NIF takes binaries, not `String`, so non-UTF-8 input is
+`{:error, :merge_failed}` rather than an `ArgumentError` from the decoder.
+
+### Interior NUL bytes are handled inconsistently — measured
+
+A `\0` inside an input string cannot cross a C string boundary. Two behaviors
+exist, and the difference is observable:
+
+| Binding | `'{"a":1}' + "\0" + ' junk'` merged with `{"b":2}` | `{"b":"x\0y"}` as incoming |
+|---|---|---|
+| Rust, BEAM | rejected — `None` / `{:error, :merge_failed}` (`CString::new` fails) | rejected |
+| TypeScript, wasm, Dart, Go | **silently truncated at the NUL** → `{"a":1,"b":2}` | `null` / `ErrMergeFailed` (the truncated text is invalid JSON) |
+
+So on the four truncating bindings, content after a NUL in an otherwise-valid
+document is dropped without any error. Do not feed unsanitized binary blobs to
+those bindings and assume a NUL will be reported. (`bindings/rust`'s
+`test_interior_nul_does_not_panic` pins the Rust behavior; the truncation
+behavior of the other four is measured here, not covered by any test.)
 
 ---
 
