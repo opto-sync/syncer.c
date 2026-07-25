@@ -148,6 +148,14 @@ Override the DSN with `OPTO_SYNC_TEST_PG` (default
 `postgres://test:test@127.0.0.1:55987/plugintest`). Single suites:
 `npm run test:drizzle | test:kysely | test:typeorm | test:prisma`.
 
+`prisma generate` needs `OPTO_SYNC_TEST_PG` set (the schema's datasource reads
+it), but the *test run* does not — the suite passes the DSN to `PrismaClient`
+explicitly so Prisma always uses the same database as every other suite.
+
+Pick a port nothing else holds. A stray `kubectl port-forward` on `localhost`
+will shadow a Docker `0.0.0.0` publish and hand you the wrong database, which is
+why the container is published on `127.0.0.1` at an unusual port.
+
 Remove the container when done: `docker rm -f plugintest-pg`.
 
 The native addon must be built first (`cd ../../bindings/typescript && npm install`).

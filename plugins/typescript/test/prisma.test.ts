@@ -31,6 +31,7 @@ import {
   stable,
   readPersisted,
   exec,
+  CONN,
 } from './harness';
 
 const TABLE = 'prisma_docs';
