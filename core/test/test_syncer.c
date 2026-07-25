@@ -832,6 +832,9 @@ int main(void) {
     TEST(test_merge_by_key_mixed_and_missing_ids);
     TEST(test_merge_by_key_at_root);
     TEST(test_version_string);
+    TEST(test_crdt_float_timestamps);
+    TEST(test_crdt_int64_extremes);
+    TEST(test_unicode_and_escaped_keys);
 
     printf("\n=== Results: %d/%d passed ===\n\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
