@@ -183,6 +183,108 @@ mod tests {
         assert_eq!(merge_json("{oops", "{}"), "");
     }
 
+    fn merge_by_key_opts() -> MergeOptions {
+        MergeOptions {
+            array_strategy: Some(ArrayMergeStrategy::MergeByKey),
+            resolve_by_timestamp: true,
+            lww_keys: Some("updatedAt,syncedAt".to_string()),
+            fww_keys: Some("createdAt".to_string()),
+            ..MergeOptions::default()
+        }
+    }
+
+    #[test]
+    fn test_version() {
+        let v = version();
+        let parts: Vec<&str> = v.split('.').collect();
+        assert_eq!(parts.len(), 3, "version not major.minor.patch: {v}");
+        assert!(parts.iter().all(|p| p.parse::<u32>().is_ok()), "{v}");
+        assert!(v >= "0.2.0", "core too old for this binding: {v}");
+    }
+
+    #[test]
+    fn test_merge_by_key_basic() {
+        // id:1 exists only in base (kept), id:2 in both (deep-merged),
+        // id:3 only incoming (appended).
+        let j1 = r#"{"items":[{"id":1,"name":"a"},{"id":2,"name":"b","tag":"keep"}]}"#;
+        let j2 = r#"{"items":[{"id":2,"name":"b2"},{"id":3,"name":"c"}]}"#;
+        let mut opts = merge_by_key_opts();
+        opts.resolve_by_timestamp = false;
+        let res = try_merge_json_with_options(j1, j2, &opts).unwrap();
+        assert!(res.contains(r#""id":1"#), "existing-only kept: {res}");
+        assert!(res.contains(r#""name":"b2""#), "matched pair merged: {res}");
+        assert!(res.contains(r#""tag":"keep""#), "merged, not replaced: {res}");
+        assert!(!res.contains(r#""name":"b""#) || res.contains(r#""name":"b2""#));
+        assert!(res.contains(r#""id":3"#), "unmatched incoming appended: {res}");
+        // id:2 must not appear twice
+        assert_eq!(res.matches(r#""id":2"#).count(), 1, "{res}");
+    }
+
+    #[test]
+    fn test_merge_by_key_numeric_string_identity() {
+        // Core promise: id 42 matches "42".
+        let j1 = r#"{"items":[{"id":42,"v":"base"}]}"#;
+        let j2 = r#"{"items":[{"id":"42","w":"inc"}]}"#;
+        let mut opts = merge_by_key_opts();
+        opts.resolve_by_timestamp = false;
+        let res = try_merge_json_with_options(j1, j2, &opts).unwrap();
+        assert_eq!(res.matches("42").count(), 1, "42/\"42\" must match: {res}");
+        assert!(res.contains(r#""v":"base""#) && res.contains(r#""w":"inc""#), "{res}");
+    }
+
+    #[test]
+    fn test_merge_by_key_custom_match_keys() {
+        // "uuid,id": uuid takes precedence as the identity key.
+        let j1 = r#"{"rows":[{"uuid":"u-1","id":9,"v":1},{"id":7,"v":2}]}"#;
+        let j2 = r#"{"rows":[{"uuid":"u-1","id":999,"patched":true},{"id":7,"also":true}]}"#;
+        let mut opts = merge_by_key_opts();
+        opts.resolve_by_timestamp = false;
+        opts.array_match_keys = Some("uuid,id".to_string());
+        let res = try_merge_json_with_options(j1, j2, &opts).unwrap();
+        // u-1 matched by uuid despite differing id; id:7 matched by id fallback.
+        assert_eq!(res.matches("u-1").count(), 1, "{res}");
+        assert!(res.contains(r#""patched":true"#), "{res}");
+        assert_eq!(res.matches(r#""id":7"#).count(), 1, "{res}");
+        assert!(res.contains(r#""also":true"#), "{res}");
+    }
+
+    #[test]
+    fn test_merge_by_key_per_element_lww_reordered() {
+        // Arrays deliberately reordered: matching is by id, not index.
+        // id:1 incoming is stale (updatedAt 50 < 100) -> rejected.
+        // id:2 incoming is fresh (updatedAt 300 > 200) -> merged.
+        let j1 = r#"{"items":[{"id":1,"updatedAt":100,"v":"keep"},{"id":2,"updatedAt":200,"v":"old"}]}"#;
+        let j2 = r#"{"items":[{"id":2,"updatedAt":300,"v":"new"},{"id":1,"updatedAt":50,"v":"stale"}]}"#;
+        let res = try_merge_json_with_options(j1, j2, &merge_by_key_opts()).unwrap();
+        assert!(res.contains(r#""v":"keep""#), "stale incoming must lose: {res}");
+        assert!(!res.contains("stale"), "{res}");
+        assert!(res.contains(r#""v":"new""#), "fresh incoming must win: {res}");
+        assert!(!res.contains(r#""v":"old""#), "{res}");
+    }
+
+    #[test]
+    fn test_merge_by_key_fww_created_at() {
+        // FWW on createdAt: an incoming element with a *newer* createdAt is a
+        // re-creation and must be rejected in favor of the first write.
+        let j1 = r#"{"items":[{"id":1,"createdAt":100,"v":"first"}]}"#;
+        let j2 = r#"{"items":[{"id":1,"createdAt":900,"v":"recreated"}]}"#;
+        let res = try_merge_json_with_options(j1, j2, &merge_by_key_opts()).unwrap();
+        assert!(res.contains(r#""v":"first""#), "{res}");
+        assert!(!res.contains("recreated"), "{res}");
+    }
+
+    #[test]
+    fn test_merge_by_key_idempotent() {
+        // merge(merge(a,b), b) == merge(a,b), including non-object elements
+        // (UNION semantics) and object elements (key match, no duplicates).
+        let a = r#"{"items":[{"id":1,"updatedAt":100,"v":1},"x",1],"tags":["a","b"]}"#;
+        let b = r#"{"items":[{"id":2,"updatedAt":50,"v":2},"y","x"],"tags":["b","c"]}"#;
+        let opts = merge_by_key_opts();
+        let once = try_merge_json_with_options(a, b, &opts).unwrap();
+        let twice = try_merge_json_with_options(&once, b, &opts).unwrap();
+        assert_eq!(once, twice, "MergeByKey must be idempotent");
+    }
+
     #[test]
     fn test_crdt_numeric_string_timestamps() {
         // Regression: strcmp would rank "9" above "10" and adopt the stale write.
