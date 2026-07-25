@@ -55,6 +55,7 @@ export async function register() {
   db = drizzle(pool);
 
   test('syncedJsonb declares a real jsonb column (dataType)', async () => {
+    await resetTable(TABLE);
     const r = await pool.query(
       `select data_type from information_schema.columns
        where table_name = $1 and column_name = 'doc'`,
