@@ -1,0 +1,14 @@
+# Elixir / Mix build output
+/_build/
+/deps/
+/doc/
+/cover/
+*.ez
+erl_crash.dump
+.elixir_ls/
+
+# Rustler / cargo build output for the NIF crate
+/native/syncer_nif/target/
+
+# Compiled NIF copied into priv/ by Rustler
+/priv/native/
