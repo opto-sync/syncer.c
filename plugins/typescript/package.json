@@ -1,0 +1,22 @@
+{
+  "name": "@opto-sync/orm-plugins",
+  "version": "0.2.0",
+  "private": true,
+  "description": "opto-sync ORM plugins (Drizzle, Kysely, TypeORM, Prisma) + integration tests",
+  "scripts": {
+    "typecheck:stubs": "tsc -p tsconfig.json",
+    "typecheck:real": "tsc -p tsconfig.real.json",
+    "test": "node --enable-source-maps ./node_modules/.bin/tsx test/run-all.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "drizzle-orm": "^0.38.3",
+    "kysely": "^0.27.5",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "tsx": "^4.19.2",
+    "typeorm": "^0.3.20",
+    "typescript": "^5.7.2"
+  }
+}

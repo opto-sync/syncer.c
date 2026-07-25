@@ -1,0 +1,167 @@
+# Merge semantics
+
+The authoritative description of what `syncer_merge_json_ex` does. Every
+binding, plugin, client, and server in opto-sync delegates to this one engine,
+so these rules hold identically in C, TypeScript, Dart, Rust, and Go — a
+property enforced by [`test-differential/`](../test-differential/), which
+requires byte-identical output across all five bindings for every input.
+
+## The model
+
+A merge takes a **base** (`json1`, the value you already have) and an
+**incoming** (`json2`, the value arriving) and produces a new document.
+Incoming data wins by default; the options below constrain when it does not.
+
+Merging is a pure function of its inputs. There is no hidden state, no clock,
+and no I/O — "which write is newer" is decided solely by timestamp fields
+present *in the documents*.
+
+## Objects
+
+Merged key by key, recursively:
+
+| Case | Result |
+|---|---|
+| Key only in base | kept |
+| Key only in incoming | added |
+| Both are objects | merged recursively |
+| Both are arrays | per the array strategy |
+| Types differ, or either is a scalar | incoming replaces base |
+
+`max_depth` (0 = unlimited) caps recursion; at the limit a subtree is replaced
+wholesale rather than merged.
+
+## Arrays
+
+Arrays are ambiguous in a way objects are not — an array can be a set, a list,
+or a table of records — so the behavior is selectable.
+
+| Strategy | Behavior | Idempotent |
+|---|---|---|
+| `REPLACE` (0, default) | incoming array replaces base | yes |
+| `APPEND` (1) | incoming elements concatenated after base | **no**, by design |
+| `UNION` (2) | incoming elements appended only if not already present | yes |
+| `MERGE_BY_INDEX` (3) | `base[i]` merged with `incoming[i]`; longer side preserved | yes |
+| `MERGE_BY_KEY` (4) | elements matched by identity key, matched pairs deep-merged | yes |
+
+`UNION` compares elements **structurally**: object keys are an unordered set,
+arrays stay order-sensitive, and integers compare exactly while any pair
+involving a real compares as a double. This matters because Postgres `jsonb`
+renormalizes key order on every write — a text comparison would fail to
+recognize a round-tripped element as a duplicate.
+
+Idempotency for the four strategies that claim it is verified over randomized
+document pairs in [`core/test/prop_test.c`](../core/test/prop_test.c).
+
+### MERGE_BY_KEY — reconciling records inside a jsonb column
+
+This is the strategy for arrays of records, the common shape in a jsonb column:
+
+```jsonc
+{ "items": [ { "id": "a", "updatedAt": 2000, "qty": 1 } ] }
+```
+
+- **Identity** is the first key from `array_match_keys` (default `"id"`) that
+  the incoming element actually carries. Using only the first *present* key
+  keeps matching deterministic: a weaker later key can never override a missing
+  match on a stronger earlier one. Numeric `42` and string `"42"` are the same
+  identity, so a writer that changes the column type does not duplicate rows.
+- **Matched pairs** deep-merge, subject to timestamp resolution *per element*.
+- **Unmatched incoming** elements are appended, in arrival order.
+- **Base-only** elements are kept.
+- Elements that are not objects, or carry none of the identity keys, fall back
+  to `UNION` semantics so repeated syncs stay idempotent.
+
+Contract: an identity value should appear at most once per array. Duplicates
+bind to the first match and make results unstable under repeated application.
+
+## Timestamp resolution (LWW / FWW)
+
+With `resolve_by_timestamp` enabled:
+
+- `lww_keys` (e.g. `"updatedAt,syncedAt"`) — **Last-Write-Wins**: if the base's
+  timestamp is newer than the incoming one, the incoming node is rejected.
+- `fww_keys` (e.g. `"createdAt"`) — **First-Write-Wins**: if the incoming
+  timestamp is newer, the incoming node is rejected. This protects an
+  original creation record from being overwritten by a later claim.
+
+Both accept comma-separated lists; surrounding spaces are tolerated; a key
+participates only when **both** sides carry it.
+
+### Comparison rules
+
+| Both sides | Compared as |
+|---|---|
+| integers | exact 64-bit (nanosecond-safe) |
+| any numeric pair with a real | double |
+| digit strings | numerically, so `"10"` > `"9"` |
+| other strings | lexicographically (correct for fixed-width ISO-8601) |
+| integer vs string | the integer is normalized to a string |
+
+Use **one format consistently per key**. Mixing formats across replicas (epoch
+on one, ISO-8601 on the other) compares lexicographically and is not
+chronologically meaningful.
+
+Represent sub-millisecond timestamps as **digit strings**. Integers past 2^53
+cannot survive an IEEE-754 double, so any JavaScript layer — a browser,
+`express.json`, even a test harness — silently rounds them. Digit strings are
+exact everywhere and still compare numerically. Rust and Dart preserve 64-bit
+integers exactly; this is asserted per runtime by the cross-server suite.
+
+### Resolution is per node, all-or-nothing
+
+A timestamp gates the object node that contains it. If the base node wins, the
+**entire** incoming node is rejected, not merely its conflicting fields. This
+is what makes stale-write rejection meaningful, and it has a consequence worth
+understanding:
+
+**Concurrent writes converge in any order only when they do not contend for the
+same node's timestamp.** Mutations touching distinct keyed array elements, or
+distinct fields under separate timestamped nodes, are order-independent.
+Two mutations gated by the same node's `updatedAt` are *not*: applying the
+older one first lets the newer one merge on top, while applying the newer one
+first rejects the older entirely. Both shapes are exercised in the e2e
+convergence suites, including a case that pins the boundary deliberately.
+
+Design for convergence by giving independently-editable records their own
+identity and their own timestamps.
+
+## Return values and errors
+
+- Returns a heap-allocated string; free it with `syncer_free` (bindings do
+  this for you).
+- Returns `NULL` when either input is not valid JSON. `NULL` is never an empty
+  string, and bindings surface it as `null`/`None`/`{:error, _}`/an exception
+  rather than silently yielding `""`.
+- A one-sided merge (`NULL` for one input) validates and normalizes the side
+  that is present.
+
+## Override callbacks
+
+`override_cb` receives the full JSON path (e.g. `$.users[0].profile`) plus both
+serialized values, and may return replacement JSON. An unparseable return falls
+back to the default merge rather than dropping data. The returned pointer is
+freed by the core with `free()`, so it must be `malloc`-allocated.
+
+Not every binding exposes callbacks: Rust, Go, and the BEAM binding
+deliberately omit them (crossing back into a managed runtime mid-merge is a
+footgun). TypeScript and Dart support them.
+
+## Documented out-of-contract inputs
+
+These are accepted by JSON but not supported, and were found by randomized
+testing rather than assumed:
+
+- **Duplicate keys in one object.** Lookups bind to the first occurrence, so
+  results are not guaranteed stable under repeated application. No mainstream
+  serializer or jsonb store produces them.
+- **Duplicate identity values in one array** under `MERGE_BY_KEY` (see above).
+
+## Robustness properties
+
+- No C-stack recursion anywhere in the engine or in structural comparison;
+  merging is an iterative DFS over a heap stack, tested to 1000 levels deep.
+- Allocation failure aborts the merge cleanly and returns `NULL` rather than
+  producing a partial document.
+- Circular-reference detection is available via `detect_circular_refs` for
+  callers building values programmatically.
