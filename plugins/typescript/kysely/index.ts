@@ -52,12 +52,15 @@ export async function kyselySyncJsonb<DB, TableName extends keyof DB & string, T
     // 1. Fetch raw string using sql`` tagged template, taking a row lock so a
     //    concurrent sync of the same row cannot interleave read-modify-write.
     //    `sql.ref` quotes the identifier, so the column name cannot inject SQL.
-    const rawQuery = await trx
+    //    The result is cast because a GENERIC table name defeats Kysely's
+    //    output inference (it widens to a union of Insert/Delete/Update
+    //    results); the projection is aliased right here, so the shape is known.
+    const rawQuery = (await trx
       .selectFrom(table)
       .select(sql<string>`${sql.ref(jsonColumn)}::text`.as('raw_json'))
       .where(idColumn as any, '=', idValue)
       .forUpdate()
-      .executeTakeFirst();
+      .executeTakeFirst()) as { raw_json: string | null } | undefined;
 
     // A missing row used to fall back to '{}' and then issue an UPDATE that
     // matched zero rows, so the caller received a merged string back and
