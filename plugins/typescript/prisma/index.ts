@@ -20,7 +20,9 @@ export function withSyncer(
   modelName: string,
   fieldName: string,
   strategy: BaseMergeStrategy<any>,
-  options?: SyncerMergeOptions
+  options?: SyncerMergeOptions,
+  /** How many times to retry when a concurrent writer wins the CAS. */
+  maxRetries: number = 5
 ) {
   return Prisma.defineExtension({
     name: 'opto-sync-syncer',
@@ -29,38 +31,89 @@ export function withSyncer(
         /**
          * Custom method added to Prisma models.
          * Usage: prisma.user.syncJsonField({ id: 1 }, rawIncomingJson)
+         *
+         * Concurrency: Prisma's model API cannot express `SELECT ... FOR UPDATE`,
+         * so this uses optimistic concurrency instead. The write is an
+         * `updateMany` whose WHERE also requires the JSON field to still equal
+         * the value the merge was computed from (a compare-and-set). If another
+         * writer committed in between, the CAS matches 0 rows and the whole
+         * read-merge-write is retried, so no merge is silently lost.
          */
         async syncJsonField(this: any, where: any, incomingRawJson: string) {
-          const context = Prisma.getExtensionContext(this);
+          const context = Prisma.getExtensionContext(this) as any;
 
-          // 1. Fetch current raw JSON from DB
-          // Note: In a real implementation we'd use raw queries to prevent
-          // Prisma from deserializing the JSONB column to a JS object, to hit our Zero-Deserialization goal.
-          const record = await (context as any).findUnique({ where });
-          if (record === null || record === undefined) {
+          // `$allModels` attaches this method to EVERY model, but `fieldName`
+          // is fixed at configuration time. Calling it on a different model
+          // would merge the wrong (or a non-existent) field, so refuse.
+          const actualModel: string | undefined = context?.$name;
+          if (
+            typeof actualModel === 'string' &&
+            actualModel.toLowerCase() !== modelName.toLowerCase()
+          ) {
             throw new Error(
-              `opto-sync: cannot sync field "${fieldName}" — no ${modelName} record matches ` +
-              `where ${JSON.stringify(where)} (findUnique returned null)`
+              `opto-sync: syncJsonField is configured for model "${modelName}" ` +
+              `(field "${fieldName}") but was called on "${actualModel}". ` +
+              `Apply a separate withSyncer() extension per model.`
             );
           }
-          const currentRawJson = JSON.stringify(record[fieldName]); // fallback if Prisma deserialized it
 
-          // 2. Perform native C merge
-          const mergedRaw = mergeJson(currentRawJson, incomingRawJson, {
-            ...options,
-            overrideCb: strategy.toNativeCallback(),
-          });
-          if (mergedRaw === null) {
-            throw new Error('opto-sync merge failed: input was not valid JSON');
-          }
-
-          // 3. Save back to DB
-          return (context as any).update({
-            where,
-            data: {
-              [fieldName]: JSON.parse(mergedRaw) // Prisma requires object here unless raw query
+          for (let attempt = 0; ; attempt++) {
+            // 1. Fetch the current document.
+            // Note: Prisma deserializes JSONB to a JS object, so the
+            // zero-deserialization goal is not reachable through the model API;
+            // this plugin trades that for Prisma-native ergonomics.
+            const record = await context.findUnique({ where });
+            if (record === null || record === undefined) {
+              throw new Error(
+                `opto-sync: cannot sync field "${fieldName}" — no ${modelName} record matches ` +
+                `where ${JSON.stringify(where)} (findUnique returned null)`
+              );
             }
-          });
+            if (!(fieldName in record)) {
+              // Without this, JSON.stringify(undefined) returns undefined (not a
+              // string) and the native addon throws an opaque "String expected".
+              throw new Error(
+                `opto-sync: ${modelName} record has no field "${fieldName}" ` +
+                `(available: ${Object.keys(record).join(', ')}). Check the ` +
+                `withSyncer() fieldName, and do not use a "select" that omits it.`
+              );
+            }
+
+            const current = record[fieldName];
+            // A JSON null / absent value is an empty document, not the string "null".
+            const currentRawJson =
+              current === null || current === undefined ? '{}' : JSON.stringify(current);
+
+            // 2. Perform native C merge
+            const mergedRaw = mergeJson(currentRawJson, incomingRawJson, {
+              ...options,
+              overrideCb: strategy.toNativeCallback(),
+            });
+            if (mergedRaw === null) {
+              throw new Error('opto-sync merge failed: input was not valid JSON');
+            }
+
+            // 3. Compare-and-set: only write if the row still holds `current`.
+            const result = await context.updateMany({
+              where: { ...where, [fieldName]: { equals: current === undefined ? null : current } },
+              data: {
+                [fieldName]: JSON.parse(mergedRaw) // Prisma requires a value, not raw SQL
+              }
+            });
+
+            if (result.count > 0) {
+              return context.findUnique({ where });
+            }
+
+            if (attempt >= maxRetries) {
+              throw new Error(
+                `opto-sync: gave up after ${maxRetries + 1} attempts merging "${fieldName}" on ` +
+                `${modelName} where ${JSON.stringify(where)} — the row kept changing ` +
+                `underneath (write contention). Retry, or serialize writes to this row.`
+              );
+            }
+            // else: a concurrent writer won; loop and re-merge onto their result.
+          }
         }
       }
     }

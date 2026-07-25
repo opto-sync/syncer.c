@@ -225,9 +225,12 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "fuzz" ]; then
         run_harness "$h" "_asan_ubsan" "$DURATION"
     done
 
-    # Leak-focused pass. Shorter by design: the corpus is already grown by the
-    # pass above, and -runs replays it deterministically under LSan rather than
-    # spending the budget discovering new coverage a second time.
+    # Leak-focused pass over the SAME corpus the run above grew. libFuzzer always
+    # replays the whole corpus at startup, so every input already discovered is
+    # re-executed under LeakSanitizer before this pass starts mutating — which is
+    # the point: the ASan-only build attributes a leak unambiguously, with no
+    # UBSan diagnostics in the way. It runs faster too (no UBSan checks), so the
+    # same wall clock buys roughly 3x the executions.
     for h in $HARNESSES; do
         banner "LEAK PASS ${h} (ASan+LSan, corpus replay + ${DURATION}s)"
         corpus="$WORK/${h/fuzz_/corpus_}"
