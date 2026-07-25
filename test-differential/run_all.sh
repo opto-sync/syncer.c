@@ -42,8 +42,10 @@ echo "dart deps ok"
 (cd rust-runner && cargo build --release --quiet)
 echo "built run_rust"
 
-# Go runner (replace directive -> ../../bindings/go, cgo compiles the core)
-(cd go-runner && go build -o run_go .)
+# Go runner (replace directive -> ../../bindings/go, cgo compiles the core).
+# -a forces a full rebuild: Go's build cache does not track the core .c files
+# that syncer_core.c #includes from outside the package directory.
+(cd go-runner && go build -a -o run_go .)
 echo "built run_go"
 
 echo
