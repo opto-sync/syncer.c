@@ -2,6 +2,10 @@
 core/build/
 bindings/typescript/build/
 bindings/typescript/node_modules/
+# ORM plugin integration-test dependencies (the generated Prisma client lands
+# in node_modules/.prisma). The lockfile IS committed, matching
+# bindings/typescript, so test runs are reproducible.
+plugins/typescript/node_modules/
 bindings/rust/target/
 bindings/dart/.dart_tool/
 
