@@ -12,7 +12,7 @@ async function main() {
   const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
   const want = (name: string) => only.length === 0 || only.includes(name);
 
-  console.log(`Postgres: ${process.env.OPTO_SYNC_TEST_PG ?? 'postgres://test:test@localhost:55432/plugintest'}`);
+  console.log(`Postgres: ${process.env.OPTO_SYNC_TEST_PG ?? 'postgres://test:test@127.0.0.1:55987/plugintest'}`);
   await waitForPostgres();
 
   const mods: Array<[string, Mod]> = [];

@@ -17,7 +17,7 @@
 //! * **No override callbacks.** `syncer_merge_override_cb_ex` is deliberately
 //!   not exposed; see the README.
 
-use rustler::{Encoder, Env, NifMap, Term};
+use rustler::{Binary, Encoder, Env, NifMap, Term};
 use syncer_rs::{ArrayMergeStrategy, MergeOptions};
 
 mod atoms {

@@ -9,7 +9,7 @@ import { Client, Pool } from 'pg';
 
 export const CONN =
   process.env.OPTO_SYNC_TEST_PG ??
-  'postgres://test:test@localhost:55432/plugintest';
+  'postgres://test:test@127.0.0.1:55987/plugintest';
 
 let assertions = 0;
 let failures = 0;
