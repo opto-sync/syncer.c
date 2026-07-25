@@ -86,6 +86,11 @@ static inline syncer_merge_options_t syncer_default_options(void) {
  * @param opts    Pointer to options struct. NULL = use defaults.
  * @return Heap-allocated merged JSON string. Caller must call syncer_free().
  *         Returns NULL on parse error.
+ *
+ * Contract note: objects with DUPLICATE keys (allowed by RFC 8259 but
+ * producible by no mainstream serializer or jsonb store) are unsupported
+ * input — lookups bind to the first occurrence and merge results over such
+ * input are not guaranteed to be stable across repeated application.
  */
 char* syncer_merge_json_ex(const char* json1,
                             const char* json2,
