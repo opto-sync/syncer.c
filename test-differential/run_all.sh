@@ -19,11 +19,18 @@ echo "== [1/4] build runners =="
 cc -O2 -I"$CORE/include" -I"$CORE/src" -o run_c run_c.c "$CORE/src/syncer.c" "$CORE/src/yyjson.c"
 echo "built run_c"
 
-# TypeScript: addon must already be built; build it if missing.
-if [ ! -f ../bindings/typescript/build/Release/syncer.node ]; then
-  (cd ../bindings/typescript && npm install)
+# TypeScript: addon must exist AND be newer than the core sources it embeds
+# (node-gyp does not rebuild when ../core/src changes).
+TS_NODE=../bindings/typescript/build/Release/syncer.node
+if [ ! -f "$TS_NODE" ] \
+   || [ "$CORE/src/syncer.c" -nt "$TS_NODE" ] \
+   || [ "$CORE/src/yyjson.c" -nt "$TS_NODE" ] \
+   || [ ../bindings/typescript/src/addon.cc -nt "$TS_NODE" ]; then
+  (cd ../bindings/typescript && npm run build >/dev/null)
+  echo "typescript addon rebuilt (was stale/missing)"
+else
+  echo "typescript addon ok"
 fi
-echo "typescript addon ok"
 
 # Dart: resolve the path dependency on ../bindings/dart
 if [ ! -f .dart_tool/package_config.json ]; then
