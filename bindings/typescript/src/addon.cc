@@ -130,8 +130,14 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     return ret;
 }
 
+Napi::Value VersionNode(const Napi::CallbackInfo& info) {
+    /* syncer_version() returns a static string — do not free. */
+    return Napi::String::New(info.Env(), syncer_version());
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set(Napi::String::New(env, "mergeJson"), Napi::Function::New(env, MergeJsonNode));
+    exports.Set(Napi::String::New(env, "version"), Napi::Function::New(env, VersionNode));
     return exports;
 }
 
