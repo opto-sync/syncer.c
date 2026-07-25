@@ -71,10 +71,13 @@ export async function register() {
   const { PrismaClient } = createRequire(__filename)(CLIENT_DIR);
   prisma = new PrismaClient();
 
-  const extend = (strategy = new PassthroughStrategy(), opts: any = POLICY, model = 'PrismaDoc') =>
+  // NB: opts is passed positionally with no default — a default here would turn
+  // an intentional `undefined` (meaning "no merge options at all") back into
+  // POLICY and silently defeat the options-forwarding test.
+  const extend = (strategy: any, opts: any, model = 'PrismaDoc') =>
     prisma.$extends(withSyncer(model, 'doc', strategy, opts));
 
-  xprisma = extend();
+  xprisma = extend(new PassthroughStrategy(), POLICY);
 
   const sync = (id: string, incoming = INCOMING_RAW, client = xprisma) =>
     client.prismaDoc.syncJsonField({ id }, incoming);
