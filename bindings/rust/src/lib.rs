@@ -30,6 +30,9 @@ pub struct SyncerMergeOptionsC {
     pub resolve_by_timestamp: bool,
     pub lww_keys: *const c_char,
     pub fww_keys: *const c_char,
+    /// MUST remain the LAST field, mirroring `syncer_merge_options_t` in
+    /// core/include/syncer.h (v0.2.0). NULL = "id".
+    pub array_match_keys: *const c_char,
 }
 
 #[derive(Default)]
