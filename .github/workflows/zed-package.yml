@@ -5,16 +5,28 @@ on:
     paths:
       - '.zpkg.toml'
       - '.zpkg.lock'
+      - 'LICENSE'
+      - 'README.md'
       - 'core/**'
-      - 'bindings/wasm/**'
+      - 'bindings/**'
+      - 'scripts/check-release-version.py'
+      - 'scripts/zpkg-smoke.sh'
+      - 'docs/ZED_PACKAGE.md'
+      - 'docs/SUBMODULE_CONSUMERS.md'
       - '.github/workflows/zed-package.yml'
   push:
     branches: [main]
     paths:
       - '.zpkg.toml'
       - '.zpkg.lock'
+      - 'LICENSE'
+      - 'README.md'
       - 'core/**'
-      - 'bindings/wasm/**'
+      - 'bindings/**'
+      - 'scripts/check-release-version.py'
+      - 'scripts/zpkg-smoke.sh'
+      - 'docs/ZED_PACKAGE.md'
+      - 'docs/SUBMODULE_CONSUMERS.md'
       - '.github/workflows/zed-package.yml'
   workflow_dispatch:
 
@@ -25,55 +37,130 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # zed-cli path-depends on a sibling checkout of zed-interfaces. Treat updates
+  # to either SHA as reviewed supply-chain changes.
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
+
 jobs:
-  pack:
+  package-roundtrip:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      - name: Checkout package
+      - name: Checkout syncer.c
         uses: actions/checkout@v4
         with:
           path: package
+          persist-credentials: false
 
-      # Pin both repositories because zed-cli uses a sibling path dependency on
-      # zed-interfaces. This prevents a moving main branch from changing package
-      # validation underneath an unrelated opto-sync pull request.
-      - name: Checkout pinned Zed CLI
-        uses: actions/checkout@v4
-        with:
-          repository: zed-pkg/zed-cli
-          ref: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
-          path: zed-cli
-
-      - name: Checkout pinned Zed interfaces
+      - name: Checkout pinned zed-interfaces
         uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-interfaces
-          ref: 415e871b1fb3dd97744c134351408a3224805dfb
+          ref: ${{ env.ZED_INTERFACES_SHA }}
           path: zed-interfaces
+          persist-credentials: false
 
-      - name: Build pinned Zed CLI
-        run: cargo build --locked --manifest-path zed-cli/Cargo.toml --bin zed
+      - name: Checkout pinned zed-cli
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
 
-      - name: Pack and dry-run the complete fan-out
+      - name: Verify release and package consistency
+        working-directory: package
+        run: python3 scripts/check-release-version.py
+
+      - name: Run native C unit, property, and sanitizer suites
         working-directory: package
         run: |
+          make -C core
+          make -C core sanitize
+
+      - name: Build the audited Zed CLI
+        run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+
+      - name: Pack twice, prove determinism, and dry-run publish
+        working-directory: package
+        env:
+          ZED: ${{ github.workspace }}/zed-cli/target/release/zed
+        run: |
           set -euo pipefail
-          ../zed-cli/target/debug/zed pack
-          ../zed-cli/target/debug/zed publish \
+          first="$RUNNER_TEMP/zpkg-first"
+          second="$RUNNER_TEMP/zpkg-second"
+          mkdir -p "$first" "$second"
+
+          rm -rf .zed
+          "$ZED" pack
+          cp .zed/pack/*.tar.gz "$first/"
+
+          rm -rf .zed
+          "$ZED" pack
+          cp .zed/pack/*.tar.gz "$second/"
+
+          (cd "$first" && find . -maxdepth 1 -type f -name '*.tar.gz' -printf '%f\n' | sort) > "$RUNNER_TEMP/first-names.txt"
+          (cd "$second" && find . -maxdepth 1 -type f -name '*.tar.gz' -printf '%f\n' | sort) > "$RUNNER_TEMP/second-names.txt"
+          diff -u "$RUNNER_TEMP/first-names.txt" "$RUNNER_TEMP/second-names.txt"
+
+          while IFS= read -r archive; do
+            sha256sum "$first/$archive" "$second/$archive"
+            cmp "$first/$archive" "$second/$archive"
+          done < "$RUNNER_TEMP/first-names.txt"
+
+          "$ZED" publish \
             --dry-run \
             --allow-dirty \
-            --skip-vcs-checks | tee ../zed-dry-run.txt
+            --skip-vcs-checks | tee "$RUNNER_TEMP/zed-dry-run.txt"
 
-          grep -F 'opto-sync/syncer@0.2.1' ../zed-dry-run.txt
-          grep -F 'opto-sync/syncer-c@0.2.1' ../zed-dry-run.txt
-          grep -F 'opto-sync/syncer-wasm@0.2.1' ../zed-dry-run.txt
-          test "$(grep -c '^dry run: would publish opto-sync/' ../zed-dry-run.txt)" -eq 3
+          grep -F 'opto-sync/syncer@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          grep -F 'opto-sync/syncer-c@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          grep -F 'opto-sync/syncer-wasm@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          test "$(grep -c '^dry run: would publish opto-sync/' "$RUNNER_TEMP/zed-dry-run.txt")" -eq 3
 
-      - name: Upload deterministic package artifacts
+          echo "ZPKG_FIRST=$first" >> "$GITHUB_ENV"
+
+      - name: Compile clean consumers from the packed C artifacts
+        run: |
+          set -euo pipefail
+          tested=0
+          for archive in "$ZPKG_FIRST"/*.tar.gz; do
+            case "$(basename "$archive")" in
+              *syncer-wasm*) continue ;;
+            esac
+            extract=$(mktemp -d "$RUNNER_TEMP/zpkg-extract.XXXXXX")
+            tar -xzf "$archive" -C "$extract"
+            sh package/scripts/zpkg-smoke.sh "$extract"
+            rm -rf "$extract"
+            tested=$((tested + 1))
+          done
+          test "$tested" -eq 2
+
+      - name: Verify the packed WebAssembly distribution
+        run: |
+          set -euo pipefail
+          wasm_archive=$(find "$ZPKG_FIRST" -maxdepth 1 -type f -name '*syncer-wasm*.tar.gz' -print -quit)
+          test -n "$wasm_archive"
+          extract=$(mktemp -d "$RUNNER_TEMP/zpkg-wasm.XXXXXX")
+          tar -xzf "$wasm_archive" -C "$extract"
+          test -n "$(find "$extract" -type f -name package.json -print -quit)"
+          test -n "$(find "$extract" -type f -name index.mjs -print -quit)"
+          test -n "$(find "$extract" -type f -name index.d.ts -print -quit)"
+          rm -rf "$extract"
+
+      - name: Run a clean Zed registry/install roundtrip
+        working-directory: package
+        env:
+          ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+          ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
+        run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
+
+      - name: Upload audited package artifacts
         uses: actions/upload-artifact@v4
         with:
           name: syncer-zed-packages
-          path: package/.zed/pack/
+          path: ${{ env.ZPKG_FIRST }}/*.tar.gz
           if-no-files-found: error
           retention-days: 7
