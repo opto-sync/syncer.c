@@ -13,8 +13,24 @@ url = "https://github.com/opto-sync/syncer.c"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = [".zed/**", ".zed-pack/**"]
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\""
+exclude = [
+  ".github/**",
+  ".zed/**",
+  ".zed-pack/**",
+  "**/node_modules/**",
+  "**/target/**",
+  "**/build/**",
+  "**/.dart_tool/**",
+  "**/_build/**",
+  "**/*.o",
+  "**/*.so",
+  "**/*.dylib",
+  "**/*.dll",
+  "fuzz-*.log",
+  "test-differential/corpus*.jsonl",
+  "test-differential/results*.jsonl",
+]
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\" || test -f \"$ZED_PKG_TEST_TARGET/include/syncer.h\" || test -f \"$ZED_PKG_TEST_TARGET/package.json\""
 
 [scripts]
 test = "cd core && make && make sanitize"
