@@ -11,6 +11,7 @@ on:
       - 'bindings/**'
       - 'plugins/**'
       - 'docs/**'
+      - 'scripts/**'
       - '.github/workflows/zpkg.yml'
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - 'bindings/**'
       - 'plugins/**'
       - 'docs/**'
+      - 'scripts/**'
       - '.github/workflows/zpkg.yml'
   workflow_dispatch:
 
@@ -60,6 +62,14 @@ jobs:
           ref: ${{ env.ZED_CLI_SHA }}
           path: zed-cli
 
+      - name: Verify release-version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 syncer.c/scripts/check-release-version.py
+          version="$(python3 -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("syncer.c/.zpkg.toml").read_text())["package"]["version"])')"
+          echo "ZPKG_ARCHIVE=opto-sync-syncer-c-${version}.tar.gz" >> "$GITHUB_ENV"
+
       - name: Build the audited Zed CLI
         run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml
 
@@ -78,15 +88,14 @@ jobs:
           (cd syncer.c && "$zed" pack --out "$one")
           (cd syncer.c && "$zed" pack --out "$two")
 
-          archive='opto-sync-syncer-c-0.2.1.tar.gz'
-          sha256sum "$one/$archive" "$two/$archive"
-          cmp "$one/$archive" "$two/$archive"
+          sha256sum "$one/$ZPKG_ARCHIVE" "$two/$ZPKG_ARCHIVE"
+          cmp "$one/$ZPKG_ARCHIVE" "$two/$ZPKG_ARCHIVE"
 
       - name: Verify the source package boundary
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/zpkg-one/opto-sync-syncer-c-0.2.1.tar.gz"
+          archive="$RUNNER_TEMP/zpkg-one/$ZPKG_ARCHIVE"
           listing="$RUNNER_TEMP/zpkg-files.txt"
           tar -tzf "$archive" | sort > "$listing"
 
@@ -122,6 +131,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: opto-sync-syncer-c-zpkg
-          path: ${{ runner.temp }}/zpkg-one/opto-sync-syncer-c-0.2.1.tar.gz
+          path: ${{ runner.temp }}/zpkg-one/${{ env.ZPKG_ARCHIVE }}
           if-no-files-found: error
           retention-days: 7
