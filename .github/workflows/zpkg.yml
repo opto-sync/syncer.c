@@ -101,7 +101,6 @@ jobs:
 
           required=(
             'pkg/.zpkg.toml'
-            'pkg/.zpkg.lock'
             'pkg/LICENSE'
             'pkg/README.md'
             'pkg/core/include/syncer.h'
@@ -120,6 +119,14 @@ jobs:
               exit 1
             }
           done
+
+          # Lockfiles are committed source/reproducibility metadata. zed-pkg's
+          # built-in artifact boundary strips .zpkg.lock so a consumer resolves
+          # its own dependency graph instead of inheriting the publisher's lock.
+          if grep -Fqx 'pkg/.zpkg.lock' "$listing"; then
+            echo '::error title=source lock leaked into package::.zpkg.lock must stay outside the published artifact'
+            exit 1
+          fi
 
           if grep -Eq '^pkg/(\.git|\.github|\.zed)(/|$)|/(node_modules|target|build|\.dart_tool)(/|$)' "$listing"; then
             echo '::error title=generated state leaked into package::Unexpected VCS, CI, cache, or build output in artifact'
