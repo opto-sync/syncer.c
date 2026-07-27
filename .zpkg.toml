@@ -1,0 +1,28 @@
+[package]
+org = "opto-sync"
+name = "syncer"
+version = "0.2.1"
+description = "Deterministic polyglot JSON reconciliation engine and language bindings"
+license = "MIT"
+keywords = ["sync", "crdt", "json", "local-first", "c", "wasm"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/opto-sync/syncer.c"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "sh \"$ZED_PKG_TEST_TARGET/scripts/zpkg-smoke.sh\""
+exclude = [
+  ".zed/**",
+  "core/build/**",
+  "**/node_modules/**",
+  "**/target/**",
+  "**/.dart_tool/**",
+  "**/_build/**",
+  "**/build/**",
+]
+
+[scripts]
+test = "make -C core"
