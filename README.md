@@ -1,6 +1,7 @@
 # syncer.c
 
 [![CI](https://github.com/opto-sync/syncer.c/actions/workflows/ci.yml/badge.svg)](https://github.com/opto-sync/syncer.c/actions/workflows/ci.yml)
+[![Zed package](https://github.com/opto-sync/syncer.c/actions/workflows/zpkg.yml/badge.svg)](https://github.com/opto-sync/syncer.c/actions/workflows/zpkg.yml)
 
 A small C library that deep-merges JSON documents with CRDT-flavored conflict
 resolution — built for reconciling the same record (same primary key, same
@@ -53,8 +54,8 @@ The two to read first:
 
 Also: [BINDINGS](docs/BINDINGS.md) · [PLUGINS](docs/PLUGINS.md) ·
 [TESTING](docs/TESTING.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) ·
-[SECURITY](docs/SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) ·
-[CHANGELOG](CHANGELOG.md)
+[SECURITY](docs/SECURITY.md) · [ZED PACKAGE](docs/ZED_PACKAGE.md) ·
+[CONTRIBUTING](CONTRIBUTING.md) · [CHANGELOG](CHANGELOG.md)
 
 Timestamp selectors can be direct keys (`updatedAt`) or RFC 6901 JSON Pointers
 relative to each merge node (`#/_sync/updatedAt`). This lets metadata remain
@@ -74,6 +75,24 @@ test-differential/  proves all five bindings produce byte-identical output
 Client libraries (offline queue, IndexedDB/SQLite, transport) live in
 [`opto-sync-clients`](../opto-sync-clients); end-to-end suites live in
 [`opto-sync-e2e`](../opto-sync-e2e).
+
+## Zed package
+
+The complete source tree is declared as `opto-sync/syncer-c@0.2.1` through the
+repository-root `.zpkg.toml`; `.zpkg.lock` is checked in for frozen, reproducible
+Zed workflows. It is intentionally one whole-repository package because every
+language binding shares the same `core/` sources. Publishing isolated language
+slices before they carry or depend on that core would create incomplete
+artifacts.
+
+```sh
+python3 scripts/check-release-version.py  # all native manifests + C ABI agree
+zed pack                                  # deterministic source artifact
+zed publish --dry-run                     # tag/provenance preflight
+```
+
+See [docs/ZED_PACKAGE.md](docs/ZED_PACKAGE.md) for the package boundary, pinned
+Zed toolchain revisions, and release procedure.
 
 ## Bindings
 
