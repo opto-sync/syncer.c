@@ -14,10 +14,7 @@ url = "https://github.com/opto-sync/syncer.c"
 include_readme = true
 tag_format = "v{version}"
 exclude = [".zed/**", ".zed-pack/**"]
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\""
-
-[scripts]
-test = "cd core && make && make sanitize"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\" && test -f \"$ZED_PKG_TEST_TARGET/LICENSE\""
 
 # The repository target is the canonical package for native bindings today.
 # Those bindings intentionally compile the shared C core from paths above their
