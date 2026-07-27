@@ -9,7 +9,9 @@ opto-sync/syncer-c@0.2.1
 The package identity and release version live in the repository-root
 [`.zpkg.toml`](../.zpkg.toml); [`.zpkg.lock`](../.zpkg.lock) is checked in even
 when this source repository has no Zed-managed dependencies, so CI and future
-consumers can use the same frozen-install contract.
+contributors can use the same frozen-install contract. The lockfile is source
+metadata: zed-pkg deliberately excludes it from published artifacts so a
+consumer resolves and locks its own dependency graph.
 
 ## Why this is one whole-repository package
 
@@ -27,9 +29,9 @@ through a tested native-toolchain path.
 ## Package boundary
 
 The artifact includes the C core, all maintained bindings and adapters,
-documentation, the root license, manifest, and lockfile. It excludes VCS/CI
-metadata, dependency directories, compiler output, language caches, fuzz logs,
-and generated differential-test state.
+documentation, the root license, and the package manifest. It excludes the
+source lockfile, VCS/CI metadata, dependency directories, compiler output,
+language caches, fuzz logs, and generated differential-test state.
 
 No Zed `[build]` hook is declared. Installing the source package never executes
 package-author code automatically; consumers opt into the native build command
