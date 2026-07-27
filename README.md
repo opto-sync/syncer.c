@@ -1,6 +1,7 @@
 # syncer.c
 
 [![CI](https://github.com/opto-sync/syncer.c/actions/workflows/ci.yml/badge.svg)](https://github.com/opto-sync/syncer.c/actions/workflows/ci.yml)
+[![Zed package](https://github.com/opto-sync/syncer.c/actions/workflows/zed-package.yml/badge.svg)](https://github.com/opto-sync/syncer.c/actions/workflows/zed-package.yml)
 
 A small C library that deep-merges JSON documents with CRDT-flavored conflict
 resolution — built for reconciling the same record (same primary key, same
@@ -53,8 +54,9 @@ The two to read first:
 
 Also: [BINDINGS](docs/BINDINGS.md) · [PLUGINS](docs/PLUGINS.md) ·
 [TESTING](docs/TESTING.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) ·
-[SECURITY](docs/SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) ·
-[CHANGELOG](CHANGELOG.md)
+[SECURITY](docs/SECURITY.md) · [ZED PACKAGE](docs/ZED_PACKAGE.md) ·
+[SUBMODULE CONSUMERS](docs/SUBMODULE_CONSUMERS.md) ·
+[CONTRIBUTING](CONTRIBUTING.md) · [CHANGELOG](CHANGELOG.md)
 
 Timestamp selectors can be direct keys (`updatedAt`) or RFC 6901 JSON Pointers
 relative to each merge node (`#/_sync/updatedAt`). This lets metadata remain
@@ -74,6 +76,27 @@ test-differential/  proves all five bindings produce byte-identical output
 Client libraries (offline queue, IndexedDB/SQLite, transport) live in
 [`opto-sync-clients`](../opto-sync-clients); end-to-end suites live in
 [`opto-sync-e2e`](../opto-sync-e2e).
+
+## Zed packages
+
+The root `.zpkg.toml` and `.zpkg.lock` publish three coordinated artifacts at
+version `0.2.1`:
+
+- `opto-sync/syncer` — the complete repository for native bindings, SQL
+  extensions, adapters, and cross-language development;
+- `opto-sync/syncer-c` — the self-contained C99 engine; and
+- `opto-sync/syncer-wasm` — the self-contained browser/worker/Node distribution.
+
+The package workflow pins the Zed toolchain, ratchets every release version,
+packs twice and compares byte-for-byte output, compiles clean C consumers from
+the extracted archives, verifies the WASM distribution, and runs a throwaway
+registry/install roundtrip. Native language slices remain in the complete
+repository package until each can build without reaching above its artifact
+root. See [docs/ZED_PACKAGE.md](docs/ZED_PACKAGE.md).
+
+Two confirmed downstream projects pin the engine and clients as sibling Git
+submodules. Any ABI or path-layout release must update and test those gitlinks as
+a compatible pair; see [docs/SUBMODULE_CONSUMERS.md](docs/SUBMODULE_CONSUMERS.md).
 
 ## Bindings
 
