@@ -1,0 +1,32 @@
+[package]
+org = "opto-sync"
+name = "syncer-c"
+version = "0.2.1"
+description = "Portable C99 JSON deep-merge engine with deterministic cross-language bindings"
+license = "MIT"
+keywords = ["sync", "local-first", "crdt", "json", "c99", "polyglot"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/opto-sync/syncer.c"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [
+  ".zed/**",
+  "**/node_modules/**",
+  "**/target/**",
+  "**/build/**",
+  "**/.dart_tool/**",
+  "**/*.o",
+  "**/*.so",
+  "**/*.dylib",
+  "**/*.dll",
+  "fuzz-*.log",
+  "test-differential/corpus*.jsonl",
+  "test-differential/results*.jsonl",
+]
+
+[scripts]
+test = "make -C core"
