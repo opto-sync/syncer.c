@@ -7,6 +7,8 @@ on:
       - '.zpkg.lock'
       - 'core/**'
       - 'bindings/wasm/**'
+      - 'scripts/zpkg-smoke.sh'
+      - 'scripts/zpkg-wasm-smoke.mjs'
       - '.github/workflows/zed-package.yml'
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - '.zpkg.lock'
       - 'core/**'
       - 'bindings/wasm/**'
+      - 'scripts/zpkg-smoke.sh'
+      - 'scripts/zpkg-wasm-smoke.mjs'
       - '.github/workflows/zed-package.yml'
   workflow_dispatch:
 
@@ -34,6 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: package
+          persist-credentials: false
 
       # Pin both repositories because zed-cli uses a sibling path dependency on
       # zed-interfaces. This prevents a moving main branch from changing package
@@ -44,6 +49,7 @@ jobs:
           repository: zed-pkg/zed-cli
           ref: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
           path: zed-cli
+          persist-credentials: false
 
       - name: Checkout pinned Zed interfaces
         uses: actions/checkout@v4
@@ -51,6 +57,7 @@ jobs:
           repository: zed-pkg/zed-interfaces
           ref: 415e871b1fb3dd97744c134351408a3224805dfb
           path: zed-interfaces
+          persist-credentials: false
 
       - name: Build pinned Zed CLI
         run: cargo build --locked --manifest-path zed-cli/Cargo.toml --bin zed
@@ -69,6 +76,27 @@ jobs:
           grep -F 'opto-sync/syncer-c@0.2.1' ../zed-dry-run.txt
           grep -F 'opto-sync/syncer-wasm@0.2.1' ../zed-dry-run.txt
           test "$(grep -c '^dry run: would publish opto-sync/' ../zed-dry-run.txt)" -eq 3
+
+      - name: Execute clean consumers against every packed target
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="${RUNNER_TEMP}/syncer-zpkg-smoke"
+          mkdir -p \
+            "${smoke_root}/repository" \
+            "${smoke_root}/c" \
+            "${smoke_root}/wasm"
+
+          tar -xzf package/.zed/pack/opto-sync-syncer-0.2.1.tar.gz \
+            -C "${smoke_root}/repository"
+          tar -xzf package/.zed/pack/opto-sync-syncer-c-0.2.1.tar.gz \
+            -C "${smoke_root}/c"
+          tar -xzf package/.zed/pack/opto-sync-syncer-wasm-0.2.1.tar.gz \
+            -C "${smoke_root}/wasm"
+
+          sh package/scripts/zpkg-smoke.sh "${smoke_root}/repository/pkg"
+          sh package/scripts/zpkg-smoke.sh "${smoke_root}/c/pkg"
+          node package/scripts/zpkg-wasm-smoke.mjs "${smoke_root}/wasm/pkg"
 
       - name: Upload deterministic package artifacts
         uses: actions/upload-artifact@v4
