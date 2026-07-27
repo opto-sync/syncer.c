@@ -41,6 +41,18 @@ zed publish
 
 The `Zed package contract` GitHub Actions workflow builds pinned revisions of
 `zed-cli` and `zed-interfaces`, runs the complete pack/publish dry-run fan-out,
-asserts the three expected identities, and uploads the generated artifacts for
+and asserts the three expected identities. It then extracts the generated
+archives into clean directories and exercises them as consumers:
+
+- the whole-repository and C-only artifacts are compiled with a fresh C program,
+  which checks `syncer_version()` and performs a real merge;
+- the WASM artifact is imported from the extracted package, initialized in Node,
+  version-checked, and used for a real merge.
+
+Only after those checks pass are the deterministic archives uploaded for
 inspection. The empty `.zpkg.lock` is intentional: this source repository has no
 Zed-managed dependencies yet.
+
+Downstream repositories that pin the engine and clients as gitlinks are recorded
+in [SUBMODULE_CONSUMERS.md](SUBMODULE_CONSUMERS.md). Review that inventory before
+changing public headers, binding paths, or package layout.
