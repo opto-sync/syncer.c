@@ -1,0 +1,88 @@
+name: Zed package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.zpkg.toml'
+      - '.zpkg.lock'
+      - 'scripts/zpkg-smoke.sh'
+      - 'core/**'
+      - 'bindings/**'
+      - '.github/workflows/zpkg.yml'
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - '.zpkg.lock'
+      - 'scripts/zpkg-smoke.sh'
+      - 'core/**'
+      - 'bindings/**'
+      - '.github/workflows/zpkg.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zpkg-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout syncer.c
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate manifest and lockfile contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          manifest = tomllib.loads(Path('.zpkg.toml').read_text(encoding='utf-8'))
+          lockfile = tomllib.loads(Path('.zpkg.lock').read_text(encoding='utf-8'))
+
+          package = manifest['package']
+          assert package['org'] == 'opto-sync'
+          assert package['name'] == 'syncer'
+          assert package['version'] == '0.2.1'
+          assert package['repository']['url'] == 'https://github.com/opto-sync/syncer.c'
+          assert manifest['publish']['tag_format'] == 'v{version}'
+          assert manifest['publish']['smoke_test'] == 'sh "$ZED_PKG_TEST_TARGET/scripts/zpkg-smoke.sh"'
+          assert lockfile == {'version': 1}
+          PY
+
+      - name: Run the native C unit and property suites
+        run: make -C core
+
+      # zed-cli path-depends on zed-interfaces, so keep the two public repos as
+      # siblings exactly as their development contract requires.
+      - name: Checkout zed-interfaces
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-interfaces
+          path: .zed-toolchain/zed-interfaces
+          persist-credentials: false
+
+      - name: Checkout zed-cli
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          path: .zed-toolchain/zed-cli
+          persist-credentials: false
+
+      - name: Build the Zed CLI from source
+        working-directory: .zed-toolchain/zed-cli
+        run: cargo build --release --locked --bin zed
+
+      - name: Roundtrip the exact published artifact
+        env:
+          ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+          ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
+        run: .zed-toolchain/zed-cli/target/release/zed r2g --clean
