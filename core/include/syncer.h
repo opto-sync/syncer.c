@@ -10,6 +10,26 @@ extern "C" {
 #include <stdbool.h>
 
 /* --------------------------------------------------------------------------
+ * Compiler portability
+ * -------------------------------------------------------------------------- */
+
+/*
+ * The legacy callback wrapper in syncer.c predates C11 and uses GNU/Clang's
+ * `__thread` spelling for per-thread callback isolation. MSVC does not provide
+ * that token, but does provide equivalent static TLS through
+ * `__declspec(thread)`. Map the otherwise-invalid reserved token only on the
+ * Microsoft C compiler so every build path that compiles the core source
+ * directly (CMake, node-gyp, Rust cc, Dart FFI, etc.) gets the same semantics.
+ *
+ * clang-cl defines _MSC_VER too, but already understands `__thread`; leave its
+ * native spelling alone. Never fall back to process-global storage: losing TLS
+ * would let callbacks leak across concurrent merges.
+ */
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__thread)
+#define __thread __declspec(thread)
+#endif
+
+/* --------------------------------------------------------------------------
  * Array merge strategies
  * -------------------------------------------------------------------------- */
 typedef enum {
@@ -108,16 +128,16 @@ static inline syncer_merge_options_t syncer_default_options(void) {
  * input are not guaranteed to be stable across repeated application.
  */
 char* syncer_merge_json_ex(const char* json1,
-                            const char* json2,
-                            const syncer_merge_options_t* opts);
+                           const char* json2,
+                           const syncer_merge_options_t* opts);
 
 /**
  * Legacy deep merge (backwards compatible).
  * Equivalent to syncer_merge_json_ex with SYNCER_ARRAY_REPLACE and legacy cb.
  */
 char* syncer_merge_json(const char* json1,
-                         const char* json2,
-                         syncer_merge_override_cb cb);
+                        const char* json2,
+                        syncer_merge_override_cb cb);
 
 /**
  * Free memory allocated by the syncer library.
