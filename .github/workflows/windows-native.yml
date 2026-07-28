@@ -1,0 +1,78 @@
+name: Windows native certification
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'bindings/typescript/**'
+      - '.github/workflows/windows-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'bindings/typescript/**'
+      - '.github/workflows/windows-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msvc-core-and-node-addon:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: bindings/typescript/package-lock.json
+
+      - name: Configure the C core with MSVC
+        shell: pwsh
+        run: cmake -S core -B core/build -A x64
+
+      - name: Build the C core with MSVC
+        shell: pwsh
+        run: cmake --build core/build --config Release --parallel
+
+      - name: Run the C core tests
+        shell: pwsh
+        run: ctest --test-dir core/build -C Release --output-on-failure
+
+      - name: Build the N-API addon from the same core source
+        working-directory: bindings/typescript
+        shell: pwsh
+        run: npm ci --foreground-scripts
+
+      - name: Prove the addon loads the expected core
+        working-directory: bindings/typescript
+        shell: pwsh
+        run: |
+          $version = node -e "process.stdout.write(require('./index.js').version())"
+          if ($version -ne '0.2.1') {
+            throw "unexpected syncer.c version: $version"
+          }
+          if (-not (Test-Path 'build/Release/syncer.node')) {
+            throw 'node-gyp did not produce build/Release/syncer.node'
+          }
+
+      - name: Run binding unit tests
+        working-directory: bindings/typescript
+        shell: pwsh
+        run: node test.js
+
+      - name: Run worker-thread and nested-callback isolation tests
+        working-directory: bindings/typescript
+        shell: pwsh
+        run: node test-concurrency.js
