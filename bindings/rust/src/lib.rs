@@ -15,6 +15,16 @@ pub enum ArrayMergeStrategy {
     MergeByKey = 4,
 }
 
+#[must_use]
+pub const fn array_strategy_discriminant(strategy: ArrayMergeStrategy) -> u8 {
+    strategy as u8
+}
+
+#[must_use]
+pub fn contains_nul_byte(bytes: &[u8]) -> bool {
+    bytes.contains(&0)
+}
+
 pub type MergeOverrideCbEx = extern "C" fn(
     json_path: *const c_char,
     val1: *const c_char,
@@ -91,6 +101,23 @@ pub fn try_merge_json_with_options(
     json2: &str,
     opts: &MergeOptions,
 ) -> Option<String> {
+    if contains_nul_byte(json1.as_bytes())
+        || contains_nul_byte(json2.as_bytes())
+        || opts
+            .lww_keys
+            .as_deref()
+            .is_some_and(|value| contains_nul_byte(value.as_bytes()))
+        || opts
+            .fww_keys
+            .as_deref()
+            .is_some_and(|value| contains_nul_byte(value.as_bytes()))
+        || opts
+            .array_match_keys
+            .as_deref()
+            .is_some_and(|value| contains_nul_byte(value.as_bytes()))
+    {
+        return None;
+    }
     // ok()? instead of unwrap(): an interior NUL in caller data must surface
     // as a failed merge, not a panic across the FFI wrapper.
     let c_json1 = CString::new(json1).ok()?;
@@ -139,6 +166,42 @@ pub fn try_merge_json_with_options(
         let res = CStr::from_ptr(ptr).to_str().map(str::to_owned).ok();
         syncer_free(ptr as *mut c_void);
         res
+    }
+}
+
+#[cfg(kani)]
+mod verification {
+    use super::*;
+
+    #[kani::proof]
+    fn c_abi_strategy_discriminants_are_stable() {
+        assert_eq!(array_strategy_discriminant(ArrayMergeStrategy::Replace), 0);
+        assert_eq!(array_strategy_discriminant(ArrayMergeStrategy::Append), 1);
+        assert_eq!(array_strategy_discriminant(ArrayMergeStrategy::Union), 2);
+        assert_eq!(
+            array_strategy_discriminant(ArrayMergeStrategy::MergeByIndex),
+            3
+        );
+        assert_eq!(
+            array_strategy_discriminant(ArrayMergeStrategy::MergeByKey),
+            4
+        );
+    }
+
+    #[kani::proof]
+    fn nul_precheck_is_exact_for_bounded_ffi_input() {
+        let bytes = kani::any::<[u8; 8]>();
+        assert_eq!(
+            contains_nul_byte(&bytes),
+            bytes[0] == 0
+                || bytes[1] == 0
+                || bytes[2] == 0
+                || bytes[3] == 0
+                || bytes[4] == 0
+                || bytes[5] == 0
+                || bytes[6] == 0
+                || bytes[7] == 0
+        );
     }
 }
 

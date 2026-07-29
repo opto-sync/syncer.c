@@ -1022,13 +1022,16 @@ static bool do_merge(
 /*  Public API                                                                */
 /* ========================================================================== */
 
+static bool array_strategy_is_valid(syncer_array_strategy_t strategy) {
+    return (unsigned)strategy <= (unsigned)SYNCER_ARRAY_MERGE_BY_KEY;
+}
+
 char* syncer_merge_json_ex(const char* json1,
                             const char* json2,
                             const syncer_merge_options_t* opts)
 {
     if (!json1 && !json2) return NULL;
-    if (opts && (unsigned)opts->array_strategy >
-                    (unsigned)SYNCER_ARRAY_MERGE_BY_KEY) {
+    if (opts && !array_strategy_is_valid(opts->array_strategy)) {
         /* An out-of-range enum previously entered the array-frame fallthrough
            and silently kept the base array. Reject malformed FFI input instead
            of returning a plausible but incorrect merge. */
