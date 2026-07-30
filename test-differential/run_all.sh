@@ -120,5 +120,15 @@ node compare.js --corpus corpus2-c.jsonl \
   rust=results2-rust.jsonl go=results2-go.jsonl \
   ${RUST_NATIVE:+rustnative=results2-rustnative.jsonl}
 
+if [ -n "$RUST_NATIVE" ]; then
+  echo
+  echo "== [5/5] pass 3: randomized C vs rust-native fuzz =="
+  # Random documents x random option sets (all 5 strategies, pointer
+  # selectors, max_depth), byte-identical + pass-2 fixed point required.
+  FUZZ_ITERS="${FUZZ_ITERS:-20000}"
+  (cd rustnative-fuzz && cargo build --release --quiet)
+  ./rustnative-fuzz/target/release/rustnative-fuzz "$FUZZ_ITERS"
+fi
+
 echo
 echo "ALL PASSES OK"
