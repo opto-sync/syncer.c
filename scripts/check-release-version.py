@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
+<<<<<<< HEAD
 """Fail when the core, Zed fan-out, or first-party bindings drift in version."""
+=======
+"""Fail when the core, Zed package, or first-party bindings drift in version."""
+>>>>>>> origin/agent/zed-release-hardening-20260727
 
 from __future__ import annotations
 
@@ -42,6 +46,10 @@ def main() -> int:
     manifest = read_toml(".zpkg.toml")
     expected = str(manifest["package"]["version"])
 
+<<<<<<< HEAD
+=======
+    targets = manifest.get("targets", {})
+>>>>>>> origin/agent/zed-release-hardening-20260727
     expected_targets = {
         "repository": (".", "syncer"),
         "c": ("core", "syncer-c"),
@@ -49,7 +57,11 @@ def main() -> int:
     }
     actual_targets = {
         name: (str(value.get("dir")), str(value.get("name")))
+<<<<<<< HEAD
         for name, value in manifest.get("targets", {}).items()
+=======
+        for name, value in targets.items()
+>>>>>>> origin/agent/zed-release-hardening-20260727
     }
     if actual_targets != expected_targets:
         print(
@@ -58,9 +70,17 @@ def main() -> int:
         )
         return 1
 
+<<<<<<< HEAD
     if read_toml(".zpkg.lock").get("version") != 1:
         print(".zpkg.lock must declare format version 1", file=sys.stderr)
         return 1
+=======
+    lock = read_toml(".zpkg.lock")
+    if lock.get("version") != 1:
+        print(".zpkg.lock must declare format version 1", file=sys.stderr)
+        return 1
+
+>>>>>>> origin/agent/zed-release-hardening-20260727
     if not (ROOT / "LICENSE").is_file():
         print("root LICENSE is required for an MIT package", file=sys.stderr)
         return 1
