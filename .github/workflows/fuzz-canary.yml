@@ -1,0 +1,66 @@
+name: Fuzz and leak canary
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'scripts/check-release-version.py'
+      - '.github/workflows/fuzz-canary.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'scripts/check-release-version.py'
+      - '.github/workflows/fuzz-canary.yml'
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-canary-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Pull requests get a fast crash/leak canary. The nightly run grows every
+      # corpus for five minutes per harness under both sanitizer variants.
+      DURATION: ${{ github.event_name == 'schedule' && '300' || '20' }}
+      JOBS: ${{ github.event_name == 'schedule' && '2' || '1' }}
+      MAX_LEN: ${{ github.event_name == 'schedule' && '16384' || '4096' }}
+      IMAGE: silkeh/clang:18
+      RSS_LIMIT_MB: '2560'
+    steps:
+      - name: Checkout syncer.c
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Show campaign configuration
+        run: |
+          docker --version
+          echo "duration=${DURATION}s per harness jobs=${JOBS} max_len=${MAX_LEN} image=${IMAGE}"
+
+      - name: Generate deterministic seed corpora
+        run: python3 core/test/fuzz/gen_corpus.py
+
+      - name: Run all fuzzers plus dedicated leak passes
+        run: bash core/test/fuzz/run_fuzz.sh all
+
+      - name: List crash artifacts
+        if: failure()
+        run: find core/test/fuzz/crashes -maxdepth 1 -type f -print || true
+
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: syncer-fuzz-crashes-${{ github.run_id }}
+          path: core/test/fuzz/crashes/
+          if-no-files-found: ignore
+          retention-days: 30
