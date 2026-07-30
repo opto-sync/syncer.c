@@ -11,12 +11,9 @@ on:
       - 'bindings/**'
       - 'scripts/check-release-version.py'
       - 'scripts/zpkg-smoke.sh'
-<<<<<<< HEAD
       - 'scripts/zpkg-wasm-smoke.mjs'
-=======
       - 'docs/ZED_PACKAGE.md'
       - 'docs/SUBMODULE_CONSUMERS.md'
->>>>>>> origin/agent/zed-release-hardening-20260727
       - '.github/workflows/zed-package.yml'
   push:
     branches: [main]
@@ -29,12 +26,9 @@ on:
       - 'bindings/**'
       - 'scripts/check-release-version.py'
       - 'scripts/zpkg-smoke.sh'
-<<<<<<< HEAD
       - 'scripts/zpkg-wasm-smoke.mjs'
-=======
       - 'docs/ZED_PACKAGE.md'
       - 'docs/SUBMODULE_CONSUMERS.md'
->>>>>>> origin/agent/zed-release-hardening-20260727
       - '.github/workflows/zed-package.yml'
   workflow_dispatch:
 
@@ -46,13 +40,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-<<<<<<< HEAD
   # zed-cli path-depends on a sibling checkout of zed-interfaces. Updates to
   # either pin are reviewed supply-chain changes.
-=======
-  # zed-cli path-depends on a sibling checkout of zed-interfaces. Treat updates
-  # to either SHA as reviewed supply-chain changes.
->>>>>>> origin/agent/zed-release-hardening-20260727
   ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
   ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
 
@@ -67,7 +56,6 @@ jobs:
           path: package
           persist-credentials: false
 
-<<<<<<< HEAD
       - name: Checkout pinned Zed CLI
         uses: actions/checkout@v4
         with:
@@ -77,9 +65,6 @@ jobs:
           persist-credentials: false
 
       - name: Checkout pinned Zed interfaces
-=======
-      - name: Checkout pinned zed-interfaces
->>>>>>> origin/agent/zed-release-hardening-20260727
         uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-interfaces
@@ -87,56 +72,27 @@ jobs:
           path: zed-interfaces
           persist-credentials: false
 
-<<<<<<< HEAD
       - name: Verify release and target consistency
         working-directory: package
         run: python3 scripts/check-release-version.py
 
       - name: Run C unit, property, and sanitizer suites
-=======
-      - name: Checkout pinned zed-cli
-        uses: actions/checkout@v4
-        with:
-          repository: zed-pkg/zed-cli
-          ref: ${{ env.ZED_CLI_SHA }}
-          path: zed-cli
-          persist-credentials: false
-
-      - name: Verify release and package consistency
-        working-directory: package
-        run: python3 scripts/check-release-version.py
-
-      - name: Run native C unit, property, and sanitizer suites
->>>>>>> origin/agent/zed-release-hardening-20260727
         working-directory: package
         run: |
           make -C core
           make -C core sanitize
 
-<<<<<<< HEAD
       - name: Build pinned Zed CLI
         run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
 
       - name: Pack twice and inspect the complete fan-out
-=======
-      - name: Build the audited Zed CLI
-        run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
-
-      - name: Pack twice, prove determinism, and dry-run publish
->>>>>>> origin/agent/zed-release-hardening-20260727
         working-directory: package
         env:
           ZED: ${{ github.workspace }}/zed-cli/target/release/zed
         run: |
           set -euo pipefail
-<<<<<<< HEAD
           first="$RUNNER_TEMP/zed-pack-first"
           mkdir -p "$first"
-=======
-          first="$RUNNER_TEMP/zpkg-first"
-          second="$RUNNER_TEMP/zpkg-second"
-          mkdir -p "$first" "$second"
->>>>>>> origin/agent/zed-release-hardening-20260727
 
           rm -rf .zed
           "$ZED" pack
@@ -144,7 +100,6 @@ jobs:
 
           rm -rf .zed
           "$ZED" pack
-<<<<<<< HEAD
 
           expected=(
             opto-sync-syncer-0.2.1.tar.gz
@@ -160,18 +115,6 @@ jobs:
             tar -tzf ".zed/pack/$archive" | grep -Fx 'pkg/LICENSE'
             ! tar -xOf ".zed/pack/$archive" pkg/.zpkg.toml | grep -F 'cd core'
           done
-=======
-          cp .zed/pack/*.tar.gz "$second/"
-
-          (cd "$first" && find . -maxdepth 1 -type f -name '*.tar.gz' -printf '%f\n' | sort) > "$RUNNER_TEMP/first-names.txt"
-          (cd "$second" && find . -maxdepth 1 -type f -name '*.tar.gz' -printf '%f\n' | sort) > "$RUNNER_TEMP/second-names.txt"
-          diff -u "$RUNNER_TEMP/first-names.txt" "$RUNNER_TEMP/second-names.txt"
-
-          while IFS= read -r archive; do
-            sha256sum "$first/$archive" "$second/$archive"
-            cmp "$first/$archive" "$second/$archive"
-          done < "$RUNNER_TEMP/first-names.txt"
->>>>>>> origin/agent/zed-release-hardening-20260727
 
           "$ZED" publish \
             --dry-run \
@@ -182,7 +125,6 @@ jobs:
           grep -F 'opto-sync/syncer-c@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
           grep -F 'opto-sync/syncer-wasm@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
           test "$(grep -c '^dry run: would publish opto-sync/' "$RUNNER_TEMP/zed-dry-run.txt")" -eq 3
-<<<<<<< HEAD
 
           echo "ZPKG_ARCHIVE_DIR=$first" >> "$GITHUB_ENV"
 
@@ -213,8 +155,6 @@ jobs:
           ZED_PKG_HOME: ${{ runner.temp }}/zed-home
           ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
         run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
-=======
->>>>>>> origin/agent/zed-release-hardening-20260727
 
           echo "ZPKG_FIRST=$first" >> "$GITHUB_ENV"
 
@@ -257,10 +197,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: syncer-zed-packages
-<<<<<<< HEAD
           path: ${{ env.ZPKG_ARCHIVE_DIR }}/*.tar.gz
-=======
-          path: ${{ env.ZPKG_FIRST }}/*.tar.gz
->>>>>>> origin/agent/zed-release-hardening-20260727
           if-no-files-found: error
           retention-days: 7
