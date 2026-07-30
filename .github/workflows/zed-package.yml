@@ -1,0 +1,185 @@
+name: Zed package contract
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - '.zpkg.lock'
+      - 'LICENSE'
+<<<<<<< HEAD
+      - 'README.md'
+=======
+>>>>>>> origin/agent/package-license-completeness
+      - 'core/**'
+      - 'bindings/**'
+      - 'scripts/check-release-version.py'
+      - 'scripts/zpkg-smoke.sh'
+      - 'scripts/zpkg-wasm-smoke.mjs'
+      - '.github/workflows/zed-package.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.zpkg.toml'
+      - '.zpkg.lock'
+      - 'LICENSE'
+<<<<<<< HEAD
+      - 'README.md'
+=======
+>>>>>>> origin/agent/package-license-completeness
+      - 'core/**'
+      - 'bindings/**'
+      - 'scripts/check-release-version.py'
+      - 'scripts/zpkg-smoke.sh'
+      - 'scripts/zpkg-wasm-smoke.mjs'
+      - '.github/workflows/zed-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # zed-cli path-depends on a sibling checkout of zed-interfaces. Updates to
+  # either pin are reviewed supply-chain changes.
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout package
+        uses: actions/checkout@v4
+        with:
+          path: package
+          persist-credentials: false
+
+      - name: Checkout pinned Zed CLI
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+
+      - name: Checkout pinned Zed interfaces
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Verify release and target consistency
+        working-directory: package
+        run: python3 scripts/check-release-version.py
+
+<<<<<<< HEAD
+      - name: Run C unit, property, and sanitizer suites
+=======
+      - name: Pack and inspect the complete fan-out
+>>>>>>> origin/agent/package-license-completeness
+        working-directory: package
+        run: |
+          make -C core
+          make -C core sanitize
+
+      - name: Build pinned Zed CLI
+        run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+
+      - name: Pack twice and inspect the complete fan-out
+        working-directory: package
+        env:
+          ZED: ${{ github.workspace }}/zed-cli/target/release/zed
+        run: |
+          set -euo pipefail
+<<<<<<< HEAD
+          first="$RUNNER_TEMP/zed-pack-first"
+          mkdir -p "$first"
+
+          rm -rf .zed
+          "$ZED" pack
+          cp .zed/pack/*.tar.gz "$first/"
+
+          rm -rf .zed
+          "$ZED" pack
+
+          expected=(
+            opto-sync-syncer-0.2.1.tar.gz
+            opto-sync-syncer-c-0.2.1.tar.gz
+            opto-sync-syncer-wasm-0.2.1.tar.gz
+          )
+          test "$(find .zed/pack -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 3
+          for archive in "${expected[@]}"; do
+            test -f "$first/$archive"
+            test -f ".zed/pack/$archive"
+            sha256sum "$first/$archive" ".zed/pack/$archive"
+            cmp "$first/$archive" ".zed/pack/$archive"
+            tar -tzf ".zed/pack/$archive" | grep -Fx 'pkg/LICENSE'
+            ! tar -xOf ".zed/pack/$archive" pkg/.zpkg.toml | grep -F 'cd core'
+          done
+
+          "$ZED" publish \
+=======
+          ../zed-cli/target/debug/zed pack
+
+          shopt -s nullglob
+          archives=(.zed/pack/*.tar.gz)
+          test "${#archives[@]}" -eq 3
+          for archive in "${archives[@]}"; do
+            tar -tzf "$archive" | grep -Fx 'pkg/LICENSE'
+            ! tar -xOf "$archive" pkg/.zpkg.toml | grep -F 'cd core'
+          done
+
+          ../zed-cli/target/debug/zed publish \
+>>>>>>> origin/agent/package-license-completeness
+            --dry-run \
+            --allow-dirty \
+            --skip-vcs-checks | tee "$RUNNER_TEMP/zed-dry-run.txt"
+
+          grep -F 'opto-sync/syncer@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          grep -F 'opto-sync/syncer-c@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          grep -F 'opto-sync/syncer-wasm@0.2.1' "$RUNNER_TEMP/zed-dry-run.txt"
+          test "$(grep -c '^dry run: would publish opto-sync/' "$RUNNER_TEMP/zed-dry-run.txt")" -eq 3
+
+          echo "ZPKG_ARCHIVE_DIR=$first" >> "$GITHUB_ENV"
+
+      - name: Execute clean consumers against every packed target
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="${RUNNER_TEMP}/syncer-zpkg-smoke"
+          mkdir -p \
+            "${smoke_root}/repository" \
+            "${smoke_root}/c" \
+            "${smoke_root}/wasm"
+
+          tar -xzf "$ZPKG_ARCHIVE_DIR/opto-sync-syncer-0.2.1.tar.gz" \
+            -C "${smoke_root}/repository"
+          tar -xzf "$ZPKG_ARCHIVE_DIR/opto-sync-syncer-c-0.2.1.tar.gz" \
+            -C "${smoke_root}/c"
+          tar -xzf "$ZPKG_ARCHIVE_DIR/opto-sync-syncer-wasm-0.2.1.tar.gz" \
+            -C "${smoke_root}/wasm"
+
+          sh package/scripts/zpkg-smoke.sh "${smoke_root}/repository/pkg"
+          sh package/scripts/zpkg-smoke.sh "${smoke_root}/c/pkg"
+          node package/scripts/zpkg-wasm-smoke.mjs "${smoke_root}/wasm/pkg"
+
+      - name: Run a clean Zed registry and install roundtrip
+        working-directory: package
+        env:
+          ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+          ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
+        run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
+
+      - name: Upload deterministic package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: syncer-zed-packages
+          path: ${{ env.ZPKG_ARCHIVE_DIR }}/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
