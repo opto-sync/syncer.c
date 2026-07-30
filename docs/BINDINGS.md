@@ -1,13 +1,13 @@
 # Bindings
 
-Six bindings expose the same engine. The merge rules are **not** restated here —
+Seven bindings expose the same engine. The merge rules are **not** restated here —
 they live in [`MERGE_SEMANTICS.md`](./MERGE_SEMANTICS.md), and the ABI rules and
 stale-artifact hazards live in [`COMPATIBILITY.md`](./COMPATIBILITY.md). This
 document is about getting each binding built, called correctly, and failing
 loudly.
 
 Core version at the time of writing: **0.2.1** (`syncer_version()`), confirmed
-through the TypeScript, WebAssembly, Dart, Rust, and Go bindings.
+through the TypeScript, WebAssembly, Dart, Rust, Go, BEAM, and Gleam bindings.
 
 Nothing is published to npm / crates.io / pub.dev / Hex yet. Every consumer in
 this repository depends on a binding by **path** (`file:` in npm, `path =` in
@@ -23,6 +23,7 @@ Cargo, `path:` in pubspec/mix, a `replace` directive in Go).
 | `bindings/rust` | crate `syncer-rs` | static, via `cc` in `build.rs` | no (safe API); raw `extern "C"` items are public | free functions, no init |
 | `bindings/go` (cgo) | module `github.com/opto-sync/syncer-go` | static, `syncer_core.c` `#include`s the core | no | package functions, no init |
 | `bindings/beam` (Rustler NIF) | Mix app `:opto_sync_nif`, module `Syncer` | static, via `syncer-rs` | no | NIF loaded on app start |
+| `bindings/gleam` | package `opto_sync`, module `opto_sync` | reuses the BEAM NIF | no | typed canonical-policy wrapper |
 
 Only the Dart binding needs a shared library at runtime (verified: `binding.gyp`
 compiles the core sources; `bindings/rust/build.rs` uses `cc`;
@@ -119,21 +120,13 @@ code; `MERGE_SEMANTICS.md`'s "never an empty string" guarantee applies to the
 The BEAM NIF takes binaries, not `String`, so non-UTF-8 input is
 `{:error, :merge_failed}` rather than an `ArgumentError` from the decoder.
 
-### Interior NUL bytes are handled inconsistently — measured
+### Interior NUL bytes are rejected
 
-A `\0` inside an input string cannot cross a C string boundary. Two behaviors
-exist, and the difference is observable:
-
-| Binding | `'{"a":1}' + "\0" + ' junk'` merged with `{"b":2}` | `{"b":"x\0y"}` as incoming |
-|---|---|---|
-| Rust, BEAM | rejected — `None` / `{:error, :merge_failed}` (`CString::new` fails) | rejected |
-| TypeScript, wasm, Dart, Go | **silently truncated at the NUL** → `{"a":1,"b":2}` | `null` / `ErrMergeFailed` (the truncated text is invalid JSON) |
-
-So on the four truncating bindings, content after a NUL in an otherwise-valid
-document is dropped without any error. Do not feed unsanitized binary blobs to
-those bindings and assume a NUL will be reported. (`bindings/rust`'s
-`test_interior_nul_does_not_panic` pins the Rust behavior; the truncation
-behavior of the other four is measured here, not covered by any test.)
+A `\0` cannot safely cross the core's C-string ABI. Every binding now checks
+for it before dispatch and reports its normal merge-failure value; no binding
+silently truncates the document. The C core also has
+`test_nul_in_key_not_truncated`, and every managed binding pins its rejection
+path.
 
 ---
 
@@ -579,10 +572,9 @@ callbacks needs a registry plus `cgo.Handle` and costs far more than the merge.
 - `LwwKeys: ""` does **not** mean "no LWW keys" — see the key-list section. The
   doc comment on the field ("Empty = none") is wrong; measured behavior is the
   core default `updatedAt`.
-- `Options.ArrayStrategy` is passed through unvalidated; an out-of-range value
-  reaches the C enum.
-- `C.CString` truncates at an interior NUL byte, so a document containing one is
-  silently shortened rather than rejected (see the failure section).
+- `Options.ArrayStrategy` is validated before it reaches the C enum.
+- Input and option strings containing an interior NUL are rejected before
+  `C.CString` allocation.
 - Struct-level thread safety: the `syncer_merge_json_ex` path is stateless, and
   `concurrency_test.go` runs 100 goroutines × 100 merges under `-race` asserting
   byte-identical output.
@@ -597,9 +589,8 @@ compiles the C core). No shared library to install.
 
 ### Build and test
 
-`elixir`/`mix` are not assumed to be present locally — and were **not** present
-on the machine where this document was written, so **the BEAM suite was not
-run here.** It is exercised through the Docker image described in
+`elixir`/`mix` are not required on the host. The BEAM suite is exercised
+through the Docker image described in
 `bindings/beam/README.md` / `bindings/beam/Dockerfile.test`:
 
 ```sh
@@ -618,11 +609,9 @@ NIF, a C compiler for the core, Elixir/OTP). Build requirements when running
 natively: Rust ≥ 1.70, `cc`, Elixir ≥ 1.14 / OTP ≥ 25. `mix compile` builds the
 crate in release mode and copies `syncer_nif.so` into `priv/native/`.
 
-Static counts (read, not run): `test/syncer_test.exs` contains **35 tests**, and
-`lib/syncer.ex` contains **4 doctests** — matching the README's "35 tests + 4
-doctests". One of those doctests asserts `Syncer.version() == "0.2.0"`, which
-**cannot pass against core 0.2.1**; see the drift list at the end of this
-document.
+The verified container run passed **35 tests + 4 doctests** against core 0.2.1.
+The same image installs pinned Gleam 1.16.0 and runs the dedicated wrapper's
+tests against that compiled NIF.
 
 ### API
 
@@ -647,7 +636,7 @@ Syncer.merge("{oops", "{}")
 ```
 
 `Syncer.crdt_options/1` expands to
-`[array_strategy: :merge_by_key, array_match_keys: "id", resolve_by_timestamp: true, lww_keys: "updatedAt,syncedAt", fww_keys: "createdAt"]`,
+`[array_strategy: :merge_by_key, array_match_keys: "id", resolve_by_timestamp: true, lww_keys: "updatedAt,syncedAt"]`,
 with `overrides` merged on top.
 
 Both sides are **JSON text** (binaries), never decoded terms — the point of the
@@ -655,8 +644,14 @@ native engine is to avoid a round trip through Elixir maps. Encode first
 (`Jason.encode!/1`) or use the Ecto plugin, which does it for you.
 
 Key-list options accept a comma-separated binary **or** a list of binaries/atoms
-(`[:updatedAt, :syncedAt]`), joined for you. Erlang and Gleam callers can use
-`'Elixir.Syncer':merge(Base, Incoming, [])` — the options are a plain proplist.
+(`[:updatedAt, :syncedAt]`), joined for you. Erlang callers can use
+`'Elixir.Syncer':merge(Base, Incoming, [])`; Gleam callers should use the
+typed `opto_sync` module.
+
+The dedicated [`bindings/gleam`](../bindings/gleam) package exposes typed
+`merge`, `merge_with_options`, `crdt_options`, and `version` functions. It
+loads the same NIF through a small Erlang bridge and returns
+`Result(String, MergeError)` for bad input.
 
 Bad **options** are a programming error and raise `ArgumentError` (unknown key,
 unknown strategy, non-boolean flag, out-of-range `:max_depth`). Bad **data** is
@@ -697,7 +692,7 @@ callback process is itself merging. Express custom resolution through
 
 ## Cross-binding guarantees
 
-- `test-differential/` merges 305 document pairs through C, TypeScript, Dart,
+- `test-differential/` merges 306 document pairs through C, TypeScript, Dart,
   Rust and Go and requires **byte-identical** output, plus a per-language
   idempotency pass. `./run_all.sh` builds every runner first, force-rebuilding
   the Node addon when it is older than the core sources and building Go with
@@ -708,17 +703,7 @@ callback process is itself merging. Express custom resolution through
 - Every binding surfaces `syncer_version()`; check it at load time when you load
   a shared library (Dart) or a prebuilt artifact.
 
-## Documentation drift found while verifying (reported, not fixed)
-
-These are inaccuracies in files this document does not own. Nothing below
-affects merge behavior.
-
-| Where | Claim | Reality |
-|---|---|---|
-| `bindings/beam/lib/syncer.ex` (doctest, ~line 176) | `Syncer.version()` → `"0.2.0"` | core is `0.2.1`; this doctest must fail, so "35 tests + 4 doctests green" cannot currently hold |
-| `bindings/go/syncer.go` (`Options.LwwKeys` doc) | "Empty = none" | empty → NULL → core default `updatedAt` (measured) |
-| `bindings/wasm/README.md` | size table, `version()` → `"0.2.0"` | `dist/` is 147,213 B / 179,510 B and reports `0.2.1` |
-| `bindings/typescript/package.json`, `bindings/dart/pubspec.yaml`, `bindings/rust/Cargo.toml`, `bindings/beam/mix.exs`, `plugins/*` manifests | `0.2.0` | core is `0.2.1` (package versions are independent, but they all read as the core version) |
-| `bindings/beam/README.md`, `plugins/beam/ecto/README.md`, several module docs | "the syncer.c engine (v0.2.0)" | `0.2.1` |
-| `.github/workflows/ci.yml` (core job comment) | "40 unit tests" | 44 (`make` prints `44/44 passed`) |
-| `plugins/typescript/test/core-contract.test.ts`, `plugins/typescript/README.md` | the override callback is not consulted for arrays under `UNION`/`MERGE_BY_KEY` | fixed in 0.2.1 — see [`PLUGINS.md`](./PLUGINS.md) |
+The version, default-option, test-count, and callback-reachability drift found
+in the earlier audit has been corrected. Binding package versions remain
+independent from the statically linked core version; use each binding's runtime
+`version()`/`engineVersion()` API when enforcing core compatibility.

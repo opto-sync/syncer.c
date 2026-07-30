@@ -169,11 +169,12 @@ class Syncer {
 
   Syncer(String libPath) {
     _lib = DynamicLibrary.open(libPath);
-    _mergeJsonEx = _lib.lookupFunction<SyncerMergeJsonExC, SyncerMergeJsonExDart>(
-        'syncer_merge_json_ex');
+    _mergeJsonEx =
+        _lib.lookupFunction<SyncerMergeJsonExC, SyncerMergeJsonExDart>(
+            'syncer_merge_json_ex');
     _free = _lib.lookupFunction<SyncerFreeC, SyncerFreeDart>('syncer_free');
-    _version =
-        _lib.lookupFunction<SyncerVersionC, SyncerVersionDart>('syncer_version');
+    _version = _lib
+        .lookupFunction<SyncerVersionC, SyncerVersionDart>('syncer_version');
   }
 
   /// Library version as "major.minor.patch". The native string is static and
@@ -185,6 +186,20 @@ class Syncer {
   /// Returns null when the core fails (e.g. either input is not valid JSON).
   String? tryMerge(String j1, String j2, {MergeOptions? options}) {
     final opts = options ?? MergeOptions();
+    if (j1.contains('\u0000') || j2.contains('\u0000')) return null;
+    if (opts.maxDepth < 0 || opts.maxDepth > 0xffffffff) {
+      throw RangeError.range(opts.maxDepth, 0, 0xffffffff, 'maxDepth');
+    }
+    for (final entry in <String, String?>{
+      'lwwKeys': opts.lwwKeys,
+      'fwwKeys': opts.fwwKeys,
+      'arrayMatchKeys': opts.arrayMatchKeys,
+    }.entries) {
+      if (entry.value?.contains('\u0000') ?? false) {
+        throw ArgumentError.value(
+            entry.value, entry.key, 'may not contain a NUL byte');
+      }
+    }
     final cj1 = j1.toNativeUtf8();
     final cj2 = j2.toNativeUtf8();
 

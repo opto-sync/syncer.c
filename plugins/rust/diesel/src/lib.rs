@@ -31,7 +31,7 @@ use syncer_rs::{try_merge_json_with_options, ArrayMergeStrategy, MergeOptions};
 /// CRDT-flavored reconciliation options.
 ///
 /// Defaults: timestamp resolution enabled, Last-Write-Wins on
-/// `updatedAt,syncedAt`, First-Write-Wins on `createdAt`, and arrays merged
+/// `updatedAt,syncedAt`, no First-Write-Wins selector, and arrays merged
 /// element-by-identity on `id` ([`ArrayMergeStrategy::MergeByKey`]).
 #[derive(Debug, Clone)]
 pub struct ReconcileOptions {
@@ -54,7 +54,7 @@ impl Default for ReconcileOptions {
             array_match_keys: "id".to_string(),
             resolve_by_timestamp: true,
             lww_keys: "updatedAt,syncedAt".to_string(),
-            fww_keys: "createdAt".to_string(),
+            fww_keys: String::new(),
             max_depth: 0,
         }
     }
@@ -68,7 +68,7 @@ impl ReconcileOptions {
             detect_circular_refs: false,
             resolve_by_timestamp: self.resolve_by_timestamp,
             lww_keys: Some(self.lww_keys.clone()),
-            fww_keys: Some(self.fww_keys.clone()),
+            fww_keys: Some(self.fww_keys.clone()).filter(|keys| !keys.is_empty()),
             array_match_keys: Some(self.array_match_keys.clone()),
         }
     }
@@ -132,8 +132,7 @@ mod tests {
     fn merge_by_key_reconciles_jsonb_arrays() {
         let current = json!({"items":[{"id":1,"qty":2},{"id":2,"qty":5}]});
         let incoming = json!({"items":[{"id":2,"qty":7},{"id":3,"qty":1}]});
-        let merged =
-            reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        let merged = reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
         let items = merged["items"].as_array().unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(merged["items"][1]["qty"], 7);

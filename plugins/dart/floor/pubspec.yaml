@@ -1,0 +1,11 @@
+name: opto_sync_floor
+description: Floor DAO reconciliation hooks backed by syncer.c
+version: 0.2.1
+publish_to: 'none'
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  syncer:
+    path: ../../../bindings/dart
+dev_dependencies:
+  test: ^1.25.0

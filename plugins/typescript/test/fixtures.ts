@@ -1,5 +1,5 @@
 /**
- * Shared reconciliation fixtures + the canonical opto-sync merge policy.
+ * Shared reconciliation fixtures + an integration-test policy.
  *
  * Every ORM plugin test drives the SAME base/incoming pair through a different
  * ORM and asserts the SAME expected document, so a divergence is a plugin bug
@@ -8,7 +8,10 @@
 import { ArrayStrategy } from '../../../bindings/typescript';
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
 
-/** The canonical policy used across every opto-sync language binding. */
+/**
+ * Integration-test policy. It intentionally opts into `createdAt` FWW so every
+ * ORM exercises that optional core branch; production defaults omit FWW.
+ */
 export const POLICY = {
   arrayStrategy: ArrayStrategy.MERGE_BY_KEY, // 4
   arrayMatchKeys: 'id',

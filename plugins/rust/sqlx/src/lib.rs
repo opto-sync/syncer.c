@@ -34,7 +34,7 @@ use syncer_rs::{try_merge_json_with_options, ArrayMergeStrategy, MergeOptions};
 /// CRDT-flavored reconciliation options.
 ///
 /// Defaults: timestamp resolution enabled, Last-Write-Wins on
-/// `updatedAt,syncedAt`, First-Write-Wins on `createdAt`, and arrays merged
+/// `updatedAt,syncedAt`, no First-Write-Wins selector, and arrays merged
 /// element-by-identity on `id` ([`ArrayMergeStrategy::MergeByKey`]).
 #[derive(Debug, Clone)]
 pub struct ReconcileOptions {
@@ -57,7 +57,7 @@ impl Default for ReconcileOptions {
             array_match_keys: "id".to_string(),
             resolve_by_timestamp: true,
             lww_keys: "updatedAt,syncedAt".to_string(),
-            fww_keys: "createdAt".to_string(),
+            fww_keys: String::new(),
             max_depth: 0,
         }
     }
@@ -71,7 +71,7 @@ impl ReconcileOptions {
             detect_circular_refs: false,
             resolve_by_timestamp: self.resolve_by_timestamp,
             lww_keys: Some(self.lww_keys.clone()),
-            fww_keys: Some(self.fww_keys.clone()),
+            fww_keys: Some(self.fww_keys.clone()).filter(|keys| !keys.is_empty()),
             array_match_keys: Some(self.array_match_keys.clone()),
         }
     }
@@ -131,21 +131,31 @@ mod tests {
     }
 
     #[test]
-    fn created_at_is_first_write_wins() {
+    fn default_does_not_let_created_at_veto_a_newer_write() {
+        let current = json!({"createdAt": 100, "owner": "first"});
+        let incoming = json!({"createdAt": 900, "updatedAt": 999, "owner": "newest-write"});
+        let merged = reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        assert_eq!(merged["owner"], "newest-write");
+        assert_eq!(merged["createdAt"], 900);
+    }
+
+    #[test]
+    fn first_write_wins_remains_an_explicit_opt_in() {
         let current = json!({"createdAt": 100, "owner": "first"});
         let incoming = json!({"createdAt": 900, "owner": "recreated"});
-        let merged =
-            reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        let options = ReconcileOptions {
+            fww_keys: "createdAt".to_string(),
+            ..ReconcileOptions::default()
+        };
+        let merged = reconcile_values(&current, &incoming, &options).unwrap();
         assert_eq!(merged["owner"], "first");
-        assert_eq!(merged["createdAt"], 100);
     }
 
     #[test]
     fn merge_by_key_matches_numeric_and_string_ids() {
         let current = json!({"items":[{"id":42,"qty":1}]});
         let incoming = json!({"items":[{"id":"42","note":"same row"}]});
-        let merged =
-            reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        let merged = reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
         let items = merged["items"].as_array().unwrap();
         assert_eq!(items.len(), 1, "id 42 must match \"42\": {merged}");
         assert_eq!(merged["items"][0]["note"], "same row");

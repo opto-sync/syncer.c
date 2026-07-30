@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
     syncer_merge_options_t opts = syncer_default_options();
     opts.array_strategy = SYNCER_ARRAY_MERGE_BY_KEY;
     opts.resolve_by_timestamp = true;
-    opts.lww_keys = "updatedAt,syncedAt";
+    opts.lww_keys = "updatedAt,syncedAt,#/_sync/updatedAt";
     opts.fww_keys = "createdAt";
     opts.array_match_keys = "id";
     opts.max_depth = 0;

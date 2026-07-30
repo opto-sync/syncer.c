@@ -52,8 +52,13 @@ typedef struct {
     uint32_t                    max_depth;      /* 0 = unlimited */
     bool                        detect_circular_refs;
     bool                        resolve_by_timestamp; /* Enable CRDT-like timestamp resolution */
-    const char*                 lww_keys;             /* Comma-separated keys for Last-Write-Wins (e.g., "updatedAt,syncedAt") */
-    const char*                 fww_keys;             /* Comma-separated keys for First-Write-Wins (e.g., "createdAt") */
+    const char*                 lww_keys;             /* Comma-separated timestamp selectors for
+                                                         Last-Write-Wins. A plain selector is a direct
+                                                         key (e.g. "updatedAt"); "#/path/to/key" is an
+                                                         RFC 6901 JSON Pointer relative to the current
+                                                         merge node (e.g. "#/_sync/updatedAt"). */
+    const char*                 fww_keys;             /* Same selector syntax for First-Write-Wins
+                                                         (e.g. "createdAt,#/meta/createdAt"). */
     /* Timestamp comparison: int-vs-int compares exactly (nanosecond-safe);
        any numeric pair involving a real compares as double; string-vs-string
        compares numerically for pure-digit strings, else lexicographically
@@ -94,7 +99,8 @@ static inline syncer_merge_options_t syncer_default_options(void) {
  * @param json2   Incoming JSON string to merge on top.
  * @param opts    Pointer to options struct. NULL = use defaults.
  * @return Heap-allocated merged JSON string. Caller must call syncer_free().
- *         Returns NULL on parse error.
+ *         Returns NULL on parse error, allocation failure, or invalid options
+ *         (including an array_strategy outside the declared enum).
  *
  * Contract note: objects with DUPLICATE keys (allowed by RFC 8259 but
  * producible by no mainstream serializer or jsonb store) are unsupported

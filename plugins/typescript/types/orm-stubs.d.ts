@@ -24,6 +24,10 @@ declare module '@prisma/client/extension' {
 declare module 'kysely' {
   export interface RawBuilder<T> {
     as(alias: string): unknown;
+    execute(executor: Kysely<any>): Promise<{
+      rows: T[];
+      numAffectedRows?: bigint;
+    }>;
     /** phantom member so T is used structurally */
     readonly __type?: T;
   }
@@ -33,6 +37,7 @@ declare module 'kysely' {
     ...values: unknown[]
   ) => RawBuilder<T>) & {
     ref(reference: string): unknown;
+    table(reference: string): unknown;
   };
 
   /** Structural stand-in for the Kysely query builder root. */
@@ -44,6 +49,10 @@ declare module 'kysely' {
     transaction(): {
       execute<T>(callback: (trx: Kysely<DB>) => Promise<T>): Promise<T>;
     };
+  }
+
+  export interface Transaction<DB> extends Kysely<DB> {
+    readonly isTransaction: true;
   }
 }
 

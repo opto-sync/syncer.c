@@ -76,10 +76,22 @@ fn concurrent_merge_with_options_is_deterministic() {
         try_merge_json_with_options(BASE, INCOMING, &opts).expect("reference merge failed");
 
     // Sanity: the reference actually exercised the option paths.
-    for want in [r#""v":"keep""#, r#""v":"new""#, r#""v":"first""#, r#""v":"appended""#, r#""owner":"base""#] {
-        assert!(expected.contains(want), "reference missing {want}: {expected}");
+    for want in [
+        r#""v":"keep""#,
+        r#""v":"new""#,
+        r#""v":"first""#,
+        r#""v":"appended""#,
+        r#""owner":"base""#,
+    ] {
+        assert!(
+            expected.contains(want),
+            "reference missing {want}: {expected}"
+        );
     }
-    assert!(!expected.contains("stale") && !expected.contains("recreated"), "{expected}");
+    assert!(
+        !expected.contains("stale") && !expected.contains("recreated"),
+        "{expected}"
+    );
 
     const THREADS: usize = 16;
     const ITERS: usize = 500;
@@ -111,7 +123,11 @@ fn concurrent_mixed_workloads_do_not_interfere() {
 
     let workloads: Vec<(&str, &str, MergeOptions)> = vec![
         (BASE, INCOMING, conc_opts()),
-        (r#"{"a":[1,2],"b":1}"#, r#"{"a":[3],"c":2}"#, MergeOptions::default()),
+        (
+            r#"{"a":[1,2],"b":1}"#,
+            r#"{"a":[3],"c":2}"#,
+            MergeOptions::default(),
+        ),
         (
             r#"{"a":["x","y"]}"#,
             r#"{"a":["y","z"]}"#,

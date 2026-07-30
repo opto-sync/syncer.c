@@ -15,7 +15,9 @@ defmodule SyncerTest do
 
   describe "version/0" do
     test "reports the statically linked core version" do
-      assert [maj, min, patch] = Syncer.version() |> String.split(".") |> Enum.map(&String.to_integer/1)
+      assert [maj, min, patch] =
+               Syncer.version() |> String.split(".") |> Enum.map(&String.to_integer/1)
+
       assert maj > 0 or min > 2 or (min == 2 and patch >= 1)
       assert [_maj, _min, _patch] = String.split(Syncer.version(), ".")
     end
@@ -158,11 +160,13 @@ defmodule SyncerTest do
       assert items == [%{"id" => 1, "v" => 1}]
     end
 
-    test "createdAt is First-Write-Wins: a re-created element loses" do
+    test "createdAt First-Write-Wins remains available as an explicit policy" do
       base = ~s({"items":[{"id":1,"createdAt":100,"v":"first"}]})
       incoming = ~s({"items":[{"id":1,"createdAt":900,"v":"recreated"}]})
 
-      %{"items" => [item]} = merged!(base, incoming, crdt())
+      %{"items" => [item]} =
+        merged!(base, incoming, Syncer.crdt_options(fww_keys: "createdAt"))
+
       assert item["v"] == "first"
       assert item["createdAt"] == 100
     end
@@ -337,8 +341,7 @@ defmodule SyncerTest do
                array_strategy: :merge_by_key,
                array_match_keys: "id",
                resolve_by_timestamp: true,
-               lww_keys: "updatedAt,syncedAt",
-               fww_keys: "createdAt"
+               lww_keys: "updatedAt,syncedAt"
              ]
 
       opts = Syncer.crdt_options(array_match_keys: "uuid,id")

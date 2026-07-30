@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -177,5 +178,26 @@ func TestOtherArrayStrategies(t *testing.T) {
 	}
 	if tags := mustParse(t, got)["tags"].([]any); len(tags) != 2 || tags[0] != "b" {
 		t.Errorf("Replace: want [b c], got %v", tags)
+	}
+}
+
+func TestInvalidArrayStrategyIsRejected(t *testing.T) {
+	_, err := MergeJSONWithOptions(`{"a":[1]}`, `{"a":[2]}`, Options{
+		ArrayStrategy: ArrayStrategy(99),
+	})
+	if !errors.Is(err, ErrInvalidOptions) {
+		t.Fatalf("got %v, want ErrInvalidOptions", err)
+	}
+}
+
+func TestInteriorNULIsRejectedBeforeCgoTruncation(t *testing.T) {
+	if _, err := MergeJSON("{}\x00{\"smuggled\":true}", `{}`); !errors.Is(err, ErrMergeFailed) {
+		t.Fatalf("input NUL: got %v, want ErrMergeFailed", err)
+	}
+	_, err := MergeJSONWithOptions(`{}`, `{}`, Options{
+		ArrayMatchKeys: "id\x00ignored",
+	})
+	if !errors.Is(err, ErrInvalidOptions) {
+		t.Fatalf("option NUL: got %v, want ErrInvalidOptions", err)
 	}
 }

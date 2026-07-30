@@ -2,6 +2,7 @@
 #include "syncer.h"
 #include <string.h>
 #include <stdlib.h>
+#include <cmath>
 #include <string>
 
 // Callback state for the CURRENT mergeJson call on THIS thread.
@@ -57,6 +58,9 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
 
     std::string j1 = info[0].As<Napi::String>().Utf8Value();
     std::string j2 = info[1].As<Napi::String>().Utf8Value();
+    if (j1.find('\0') != std::string::npos || j2.find('\0') != std::string::npos) {
+        return env.Null();
+    }
 
     /* syncer_default_options() fully initializes EVERY field, including the
        v0.2.0 array_match_keys pointer — never construct this struct by hand. */
@@ -76,28 +80,94 @@ Napi::Value MergeJsonNode(const Napi::CallbackInfo& info) {
     } else if (info.Length() >= 3 && info[2].IsObject()) {
         Napi::Object jOpts = info[2].As<Napi::Object>();
         
-        if (jOpts.Has("arrayStrategy") && jOpts.Get("arrayStrategy").IsNumber()) {
-            opts.array_strategy = (syncer_array_strategy_t)jOpts.Get("arrayStrategy").As<Napi::Number>().Int32Value();
+        if (jOpts.Has("arrayStrategy")) {
+            Napi::Value raw = jOpts.Get("arrayStrategy");
+            double strategy = raw.IsNumber()
+                ? raw.As<Napi::Number>().DoubleValue()
+                : -1.0;
+            if (!std::isfinite(strategy) || std::floor(strategy) != strategy ||
+                strategy < SYNCER_ARRAY_REPLACE ||
+                strategy > SYNCER_ARRAY_MERGE_BY_KEY) {
+                Napi::RangeError::New(
+                    env, "arrayStrategy must be an integer from 0 through 4"
+                ).ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            opts.array_strategy = (syncer_array_strategy_t)strategy;
         }
-        if (jOpts.Has("maxDepth") && jOpts.Get("maxDepth").IsNumber()) {
-            opts.max_depth = jOpts.Get("maxDepth").As<Napi::Number>().Uint32Value();
+        if (jOpts.Has("maxDepth")) {
+            Napi::Value raw = jOpts.Get("maxDepth");
+            double depth = raw.IsNumber() ? raw.As<Napi::Number>().DoubleValue() : -1.0;
+            if (!std::isfinite(depth) || std::floor(depth) != depth ||
+                depth < 0 || depth > UINT32_MAX) {
+                Napi::RangeError::New(
+                    env, "maxDepth must be an integer from 0 through 4294967295"
+                ).ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            opts.max_depth = (uint32_t)depth;
         }
-        if (jOpts.Has("detectCircularRefs") && jOpts.Get("detectCircularRefs").IsBoolean()) {
-            opts.detect_circular_refs = jOpts.Get("detectCircularRefs").As<Napi::Boolean>().Value();
+        if (jOpts.Has("detectCircularRefs")) {
+            Napi::Value raw = jOpts.Get("detectCircularRefs");
+            if (!raw.IsBoolean()) {
+                Napi::TypeError::New(env, "detectCircularRefs must be a boolean")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            opts.detect_circular_refs = raw.As<Napi::Boolean>().Value();
         }
-        if (jOpts.Has("resolveByTimestamp") && jOpts.Get("resolveByTimestamp").IsBoolean()) {
-            opts.resolve_by_timestamp = jOpts.Get("resolveByTimestamp").As<Napi::Boolean>().Value();
+        if (jOpts.Has("resolveByTimestamp")) {
+            Napi::Value raw = jOpts.Get("resolveByTimestamp");
+            if (!raw.IsBoolean()) {
+                Napi::TypeError::New(env, "resolveByTimestamp must be a boolean")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            opts.resolve_by_timestamp = raw.As<Napi::Boolean>().Value();
         }
-        if (jOpts.Has("lwwKeys") && jOpts.Get("lwwKeys").IsString()) {
-            lww_keys_storage = jOpts.Get("lwwKeys").As<Napi::String>().Utf8Value();
+        if (jOpts.Has("lwwKeys")) {
+            Napi::Value raw = jOpts.Get("lwwKeys");
+            if (!raw.IsString()) {
+                Napi::TypeError::New(env, "lwwKeys must be a string")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            lww_keys_storage = raw.As<Napi::String>().Utf8Value();
+            if (lww_keys_storage.find('\0') != std::string::npos) {
+                Napi::TypeError::New(env, "lwwKeys may not contain a NUL byte")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
             opts.lww_keys = lww_keys_storage.c_str();
         }
-        if (jOpts.Has("fwwKeys") && jOpts.Get("fwwKeys").IsString()) {
-            fww_keys_storage = jOpts.Get("fwwKeys").As<Napi::String>().Utf8Value();
+        if (jOpts.Has("fwwKeys")) {
+            Napi::Value raw = jOpts.Get("fwwKeys");
+            if (!raw.IsString()) {
+                Napi::TypeError::New(env, "fwwKeys must be a string")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            fww_keys_storage = raw.As<Napi::String>().Utf8Value();
+            if (fww_keys_storage.find('\0') != std::string::npos) {
+                Napi::TypeError::New(env, "fwwKeys may not contain a NUL byte")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
             opts.fww_keys = fww_keys_storage.c_str();
         }
-        if (jOpts.Has("arrayMatchKeys") && jOpts.Get("arrayMatchKeys").IsString()) {
-            array_match_keys_storage = jOpts.Get("arrayMatchKeys").As<Napi::String>().Utf8Value();
+        if (jOpts.Has("arrayMatchKeys")) {
+            Napi::Value raw = jOpts.Get("arrayMatchKeys");
+            if (!raw.IsString()) {
+                Napi::TypeError::New(env, "arrayMatchKeys must be a string")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            array_match_keys_storage = raw.As<Napi::String>().Utf8Value();
+            if (array_match_keys_storage.find('\0') != std::string::npos) {
+                Napi::TypeError::New(env, "arrayMatchKeys may not contain a NUL byte")
+                    .ThrowAsJavaScriptException();
+                return env.Null();
+            }
             opts.array_match_keys = array_match_keys_storage.c_str();
         }
         if (jOpts.Has("overrideCb") && jOpts.Get("overrideCb").IsFunction()) {

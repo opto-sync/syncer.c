@@ -8,8 +8,8 @@ unique index) across a client and a server, and especially for reconciling
 `jsonb` columns and other non-primitive fields.
 
 One engine, shared by every runtime. The merge rules live here and nowhere
-else, so a browser, a Node server, a Dart app, a Rust service, and an Elixir
-worker all resolve the same conflict the same way.
+else, so a browser, a Node server, a Dart app, a Rust service, and
+Elixir/Gleam workers all resolve the same conflict the same way.
 
 ```c
 #include "syncer.h"
@@ -19,7 +19,7 @@ opts.array_strategy       = SYNCER_ARRAY_MERGE_BY_KEY;  /* records in arrays */
 opts.array_match_keys     = "id";
 opts.resolve_by_timestamp = true;
 opts.lww_keys             = "updatedAt,syncedAt";       /* last write wins   */
-opts.fww_keys             = "createdAt";                /* first write wins  */
+opts.fww_keys             = NULL;                        /* explicit opt-in   */
 
 char* merged = syncer_merge_json_ex(stored_jsonb, incoming_jsonb, &opts);
 if (!merged) { /* invalid JSON */ }
@@ -56,12 +56,18 @@ Also: [BINDINGS](docs/BINDINGS.md) · [PLUGINS](docs/PLUGINS.md) ·
 [SECURITY](docs/SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) ·
 [CHANGELOG](CHANGELOG.md)
 
+Timestamp selectors can be direct keys (`updatedAt`) or RFC 6901 JSON Pointers
+relative to each merge node (`#/_sync/updatedAt`). This lets metadata remain
+nested inside JSON/JSONB documents without duplicating it at every object
+level.
+
 ## Layout
 
 ```
 core/           the engine (C99, vendored yyjson, no other dependencies)
 bindings/       typescript (N-API) · wasm · dart (FFI) · rust · go (cgo) · beam (Rustler NIF)
-plugins/        ORM adapters: drizzle · prisma · kysely · typeorm · diesel · sqlx · seaorm · gorm · ecto
+plugins/        ORM adapters: TS 4 · Rust 3 · Go 3 · Dart 3 · BEAM 2
+bindings/sql/   SQLite loadable extension · PostgreSQL extension + trigger
 test-differential/  proves all five bindings produce byte-identical output
 ```
 
@@ -79,6 +85,7 @@ Client libraries (offline queue, IndexedDB/SQLite, transport) live in
 | Rust (`syncer-rs`) | statically, via `cc` | no | |
 | Go | statically, via cgo | no | core compiled into the package |
 | BEAM (Elixir/Erlang) | via `syncer-rs` | no | Rustler NIF, dirty CPU scheduler |
+| Gleam | via the BEAM NIF | no | typed `bindings/gleam` wrapper |
 
 Callbacks are omitted where re-entering a managed runtime mid-merge would be a
 footgun. See [COMPATIBILITY.md](docs/COMPATIBILITY.md) for which bindings mirror
@@ -104,7 +111,7 @@ Deeper layers:
 |---|---|
 | `core/test/prop_test.c` | idempotency for every strategy that promises it; output always valid JSON; corrupted input never crashes |
 | `core/test/fuzz/` | coverage-guided libFuzzer campaigns (ASan+UBSan, and ASan+LSan for leaks) — `core/test/fuzz/run_fuzz.sh` |
-| `test-differential/` | 305 document pairs merged through C, TypeScript, Dart, Rust and Go must be **byte-identical**, plus a per-language idempotency pass |
+| `test-differential/` | 306 document pairs merged through C, TypeScript, Dart, Rust and Go must be **byte-identical**, plus a per-language idempotency pass |
 | per-binding suites | each binding's own option surface, plus concurrency (`-race`, threads, worker_threads) |
 
 ## Design

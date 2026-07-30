@@ -1,7 +1,13 @@
 # Build artifacts
 core/build/
 bindings/typescript/build/
+bindings/gleam/build/
 bindings/typescript/node_modules/
+bindings/sql/postgres/*.o
+bindings/sql/postgres/*.so
+bindings/sql/sqlite/opto_sync.so
+bindings/sql/sqlite/opto_sync.dylib
+bindings/sql/sqlite/opto_sync.dll
 # ORM plugin integration-test dependencies (the generated Prisma client lands
 # in node_modules/.prisma). The lockfile IS committed, matching
 # bindings/typescript, so test runs are reproducible.
@@ -23,6 +29,9 @@ bindings/dart/.dart_tool/
 
 # Dart tool caches anywhere
 **/.dart_tool/
+# Dart ORM adapters are library packages; resolver locks are generated locally
+# and intentionally not versioned.
+plugins/dart/*/pubspec.lock
 
 # Compiled test binaries and debug symbols
 core/test/test_syncer

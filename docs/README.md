@@ -7,6 +7,7 @@ Start here. Documentation spans three repos; this index covers all of them.
 | Doc | Read it when |
 |---|---|
 | [MERGE_SEMANTICS.md](./MERGE_SEMANTICS.md) | **The contract.** Object and array rules, all five array strategies, timestamp comparison, when concurrent writes converge and when they provably do not, out-of-contract inputs. |
+| [AUDIT_2026-07-25.md](./AUDIT_2026-07-25.md) | Current architecture/security audit, SQL deployment matrix, ORM coverage plan, and the next protocol slice. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | You want the layering, the zero-deserialization data flow, and how the engine works internally. |
 | [PERFORMANCE.md](./PERFORMANCE.md) | You need measured throughput and complexity per strategy before sizing documents. |
 
@@ -14,7 +15,7 @@ Start here. Documentation spans three repos; this index covers all of them.
 
 | Doc | Read it when |
 |---|---|
-| [BINDINGS.md](./BINDINGS.md) | Picking or wiring a language binding (TypeScript, WebAssembly, Dart, Rust, Go, BEAM). |
+| [BINDINGS.md](./BINDINGS.md) | Picking or wiring a language binding (TypeScript, WebAssembly, Dart, Rust, Go, BEAM, Gleam). |
 | [PLUGINS.md](./PLUGINS.md) | Integrating with an ORM. **Contains the concurrency requirement — read it before shipping a read-modify-write path.** |
 | [../../opto-sync-clients/docs/GETTING_STARTED.md](../../opto-sync-clients/docs/GETTING_STARTED.md) | Adopting a client library (ts / dart / rust). |
 | [../../opto-sync-clients/docs/BROWSER.md](../../opto-sync-clients/docs/BROWSER.md) | Running in a browser (WebAssembly engine, bundlers, workers). |
@@ -57,6 +58,6 @@ listed here because they are not guessable.
 
 | Repo | Contents |
 |---|---|
-| [syncer.c](..) | The C merge engine, six language bindings, nine ORM plugins, the cross-language differential suite. |
-| [opto-sync-clients](../../opto-sync-clients) | Client libraries external projects import: optimistic queue + reconcile for TypeScript, Dart, Rust. |
+| [syncer.c](..) | The C merge engine, seven language bindings, fifteen ORM/framework adapters, SQLite/PostgreSQL SQL interfaces, and the cross-language differential suite. |
+| [opto-sync-clients](../../opto-sync-clients) | Client libraries external projects import: optimistic queue + reconcile for TypeScript, Dart, Rust, and Gleam. |
 | [opto-sync-e2e](../../opto-sync-e2e) | Five servers in four runtimes and the end-to-end suites, including remote-browser runs on real Kubernetes clusters. |

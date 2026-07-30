@@ -27,7 +27,7 @@ use syncer_rs::{try_merge_json_with_options, ArrayMergeStrategy, MergeOptions};
 /// CRDT-flavored reconciliation options.
 ///
 /// Defaults: timestamp resolution enabled, Last-Write-Wins on
-/// `updatedAt,syncedAt`, First-Write-Wins on `createdAt`, and arrays merged
+/// `updatedAt,syncedAt`, no First-Write-Wins selector, and arrays merged
 /// element-by-identity on `id` ([`ArrayMergeStrategy::MergeByKey`]).
 #[derive(Debug, Clone)]
 pub struct ReconcileOptions {
@@ -50,7 +50,7 @@ impl Default for ReconcileOptions {
             array_match_keys: "id".to_string(),
             resolve_by_timestamp: true,
             lww_keys: "updatedAt,syncedAt".to_string(),
-            fww_keys: "createdAt".to_string(),
+            fww_keys: String::new(),
             max_depth: 0,
         }
     }
@@ -64,7 +64,7 @@ impl ReconcileOptions {
             detect_circular_refs: false,
             resolve_by_timestamp: self.resolve_by_timestamp,
             lww_keys: Some(self.lww_keys.clone()),
-            fww_keys: Some(self.fww_keys.clone()),
+            fww_keys: Some(self.fww_keys.clone()).filter(|keys| !keys.is_empty()),
             array_match_keys: Some(self.array_match_keys.clone()),
         }
     }
@@ -119,8 +119,7 @@ mod tests {
     fn lww_prefers_newest_per_nested_object() {
         let current = json!({"doc": {"updatedAt": 300, "body": "kept"}});
         let incoming = json!({"doc": {"updatedAt": 200, "body": "stale"}});
-        let merged =
-            reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        let merged = reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
         assert_eq!(merged["doc"]["body"], "kept");
     }
 
@@ -129,13 +128,18 @@ mod tests {
         let current = r#"{"rows":[{"id":1,"v":"a"}]}"#;
         let incoming = r#"{"rows":[{"id":2,"v":"b"}]}"#;
         let res = reconcile_jsonb(current, incoming, &ReconcileOptions::default()).unwrap();
-        assert!(res.contains(r#""id":1"#) && res.contains(r#""id":2"#), "{res}");
+        assert!(
+            res.contains(r#""id":1"#) && res.contains(r#""id":2"#),
+            "{res}"
+        );
     }
 
     #[test]
     fn custom_match_keys_are_honored() {
-        let mut opts = ReconcileOptions::default();
-        opts.array_match_keys = "uuid,id".to_string();
+        let opts = ReconcileOptions {
+            array_match_keys: "uuid,id".to_string(),
+            ..ReconcileOptions::default()
+        };
         let current = json!({"rows":[{"uuid":"u1","id":1,"v":"a"}]});
         let incoming = json!({"rows":[{"uuid":"u1","id":999,"v":"b"}]});
         let merged = reconcile_values(&current, &incoming, &opts).unwrap();

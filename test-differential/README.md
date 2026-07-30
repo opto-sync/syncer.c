@@ -6,7 +6,7 @@ Rust, Go) produces **byte-identical** merge output from the shared C core.
 ## How it works
 
 1. `gen_corpus.js` — seeded PRNG (mulberry32, fixed seed, no `Date.now` /
-   unseeded `Math.random`) emits `corpus.jsonl`: ~305 lines of
+   unseeded `Math.random`) emits `corpus.jsonl`: 306 lines of
    `{"base":<obj>,"incoming":<obj>}`. Lines are built by **string
    concatenation**, never `JSON.stringify` of JS numbers, so int64
    timestamps like `1689940800123456789` survive verbatim. The corpus
@@ -19,7 +19,8 @@ Rust, Go) produces **byte-identical** merge output from the shared C core.
    merged JSON string per line, exactly as returned by the binding, no
    re-serialization. All use identical options:
    `arrayStrategy=MERGE_BY_KEY(4)`, `resolveByTimestamp=true`,
-   `lwwKeys="updatedAt,syncedAt"`, `fwwKeys="createdAt"`,
+   `lwwKeys="updatedAt,syncedAt,#/_sync/updatedAt"`,
+   `fwwKeys="createdAt"`,
    `arrayMatchKeys="id"`, `maxDepth=0`, no callback.
 3. `compare.js` asserts all five results files are byte-identical
    line-by-line; on mismatch it prints the line number, the inputs, and

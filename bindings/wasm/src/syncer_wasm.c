@@ -36,8 +36,9 @@
 /**
  * Flat-argument merge with an optional override callback.
  *
- * @param strategy         syncer_array_strategy_t as an int (0..4). Passed
- *                         through unvalidated, matching the Node binding.
+ * @param strategy         syncer_array_strategy_t as an int (0..4). The JS
+ *                         wrapper validates it and the C core rejects any
+ *                         out-of-range value as a defense in depth.
  * @param max_depth        0 = unlimited.
  * @param detect_circular  0/1.
  * @param resolve_ts       0/1.

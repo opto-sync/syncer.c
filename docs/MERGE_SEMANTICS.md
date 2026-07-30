@@ -84,8 +84,13 @@ With `resolve_by_timestamp` enabled:
 - `fww_keys` (e.g. `"createdAt"`) — **First-Write-Wins**: if the incoming
   timestamp is newer, the incoming node is rejected.
 
-Both accept comma-separated lists; surrounding spaces are tolerated; a key
-participates only when **both** sides carry it.
+Both accept comma-separated selector lists; surrounding spaces are tolerated.
+A plain selector such as `updatedAt` reads a direct key from the current merge
+node. A selector beginning `#/` is an RFC 6901 JSON Pointer relative to that
+node, for example `#/_sync/updatedAt` or `#/metadata/a~1b` (the latter selects
+the key `a/b`). Array indices are supported. The `#` marker keeps a literal
+direct key beginning with `/` unambiguous. A selector participates only when
+**both** sides resolve it.
 
 The two lists are an **OR of vetoes**, not a precedence order, and neither is
 "per field": `should_reject_by_crdt_rules` consults `fww_keys` first, then

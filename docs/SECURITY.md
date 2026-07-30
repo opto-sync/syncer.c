@@ -20,9 +20,9 @@ is a testing question, not a language guarantee.
 | ASan + UBSan | `test_syncer.c` + `prop_test.c` | `cd core && make sanitize` | **in CI** — `.github/workflows/ci.yml`, job `core (sanitize)`, `ubuntu-latest` |
 | LeakSanitizer | same two suites | Linux only. Explicit pass: `core/test/fuzz/run_fuzz.sh leaks` with `ASAN_OPTIONS=detect_leaks=1` | not a separate CI job; the CI `sanitize` leg runs on Linux, where ASan enables LSan by default |
 | libFuzzer (4 harnesses) | `fuzz_merge`, `fuzz_strategies`, `fuzz_callback`, `fuzz_idempotent` | `core/test/fuzz/run_fuzz.sh`, inside a Linux clang container | **manual — not wired into CI** |
-| Unit tests | 44 `TEST(...)` registrations in `core/test/test_syncer.c` | `cd core && make` | in CI |
+| Unit tests | 46 `TEST(...)` registrations in `core/test/test_syncer.c` | `cd core && make` | in CI |
 | Property tests | idempotency + "output is valid JSON" over generated pairs, fixed seed | `core/test/prop_test.c`, `cd core && make` | in CI |
-| Cross-language differential | ~305 generated pairs, five bindings must produce **byte-identical** output; second pass re-checks idempotency | `test-differential/` | in CI |
+| Cross-language differential | 306 generated pairs, five bindings must produce **byte-identical** output; second pass re-checks idempotency | `test-differential/` | in CI |
 
 Harness details are in [`../core/test/fuzz/README.md`](../core/test/fuzz/README.md).
 Each harness packs two documents into one input split on `0x1E`; `fuzz_strategies`
@@ -170,6 +170,9 @@ Evidence: [`../plugins/typescript/test/`](../plugins/typescript/test/).
 | `plugins/typescript/kysely` | `sql.ref(jsonColumn)` **quotes** the identifier, so a hostile name becomes an unknown identifier Postgres rejects rather than SQL it executes (`kysely/index.ts:54-60`) | `kysely.test.ts` → "column identifier is quoted, not interpolated (injection attempt is inert)": the call rejects, and the table-still-exists check passes |
 | `plugins/typescript/drizzle` | Builds **no SQL at all** — it is a Drizzle `customType` plus a pure string-in/string-out merge helper, so there is no identifier to interpolate | reviewed source (`drizzle/index.ts`); no injection test exists because there is no injection surface |
 | `plugins/typescript/prisma` | Uses Prisma's model API (`findUnique` / `updateMany`), not raw SQL; the model and field names are fixed at configuration time and a call on a different model is refused (`prisma/index.ts:66-83`) | content test only (below) |
+| `plugins/dart/drift` | Restricts table/column names to `[A-Za-z_][A-Za-z0-9_]*`; record ids and JSON are bound `Variable`s | `syncer_drift_test.dart` rejects a statement-bearing table name before execution and verifies transactional persistence |
+| `bindings/sql/postgres` | The C function accepts typed `jsonb`; the trigger selects a column from `to_jsonb(NEW)` and uses `jsonb_populate_record`, never dynamic SQL | isolated-cluster trigger test in `bindings/sql/postgres/test.sh` |
+| `bindings/sql/sqlite` | The extension receives SQLite values directly; the recommended UPSERT uses bound application values | loadable-extension test in `bindings/sql/sqlite/test.sh` |
 
 Content — verified for **typeorm, kysely and prisma**. Each writes the string
 `he said "hi"; drop table <table>; -- '\ 100%` plus a nested `O'Brien` through
@@ -183,11 +186,13 @@ cannot write garbage.
 
 ### Not verified
 
-- The **Rust** (`diesel`, `sqlx`, `seaorm`), **Go** (`gorm`), **Dart**
-  (`drift`) and **BEAM** (`ecto`) plugins have no equivalent
-  identifier-injection probe in their test suites. Their query builders are
-  parameterizing by construction, but that is an inference from the ORM's
-  contract, not a tested assertion in this repo.
+- The **Rust** (`diesel`, `sqlx`, `seaorm`), **Go** (`gorm`, `ent`, `bun`) and
+  **BEAM** (`ecto`, `ash`) adapters have no equivalent end-to-end hostile
+  identifier probe. Ent, Bun, and Ash are callback/changeset adapters rather
+  than raw-SQL builders, but their transaction/query callbacks are supplied by
+  the application; safety therefore depends on that implementation. The other
+  adapters use ORM query builders, whose parameterization is an inference from
+  the ORM contract rather than a tested assertion in this repository.
 - `quoteIdent` in `plugins/typescript/test/harness.ts` is **test scaffolding**,
   not a shipped safety mechanism.
 

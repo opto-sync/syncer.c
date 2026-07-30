@@ -134,12 +134,14 @@ bindings and ORM plugins use:
   array_strategy: :merge_by_key,
   array_match_keys: "id",
   resolve_by_timestamp: true,
-  lww_keys: "updatedAt,syncedAt",
-  fww_keys: "createdAt"
+  lww_keys: "updatedAt,syncedAt"
 ]
 ```
 
 Overrides are applied on top: `Syncer.crdt_options(array_match_keys: "uuid,id")`.
+First-Write-Wins remains available as an explicit override, but is not a
+default because it vetoes an entire incoming node rather than protecting only
+the selected field.
 
 Timestamp comparison follows the core's contract: int-vs-int compares exactly
 (nanosecond-safe, no float rounding), pure-digit strings compare numerically

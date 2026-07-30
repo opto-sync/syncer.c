@@ -1,6 +1,6 @@
 # ORM plugins
 
-Nine adapters route a JSON/JSONB column through the merge engine so a concurrent
+Fifteen adapters route a JSON/JSONB column through the merge engine so a concurrent
 write **reconciles** with the stored document instead of overwriting it.
 
 The merge rules are in [`MERGE_SEMANTICS.md`](./MERGE_SEMANTICS.md); the
@@ -22,10 +22,10 @@ because the data loss is silent.
 | LWW keys | `"updatedAt,syncedAt"` |
 | FWW keys | *(unset)* |
 
-Spelled per language: `POLICY` in `plugins/typescript/test/fixtures.ts`,
-`ReconcileOptions::default()` in the three Rust crates, `canonicalOptions()` in
-`plugins/go/gorm/syncer_test.go`, `Syncer.crdt_options/0` (re-exported as
-`OptoSyncEcto.crdt_options/1`) on the BEAM.
+Spelled per language: `DEFAULT_RECONCILE_OPTIONS` in the TypeScript client,
+`ReconcileOptions::default()` in the Rust clients/plugins,
+`Syncer.crdt_options/0` (re-exported as `OptoSyncEcto.crdt_options/1`) on the
+BEAM, and the defaults in `DriftSyncer` and both SQL extensions.
 
 ### Why there is no FWW key
 
@@ -47,11 +47,9 @@ successful response. Two devices creating the same id offline is enough. Set
 semantics you actually want. Full write-up in
 [`MERGE_SEMANTICS.md`](./MERGE_SEMANTICS.md#timestamp-resolution-lww--fww).
 
-> **Divergence to be aware of.** The opto-sync clients (TypeScript, Dart, Rust)
-> and all five opto-sync servers ship this policy today. Several plugin
-> defaults and test fixtures under `plugins/` still spell `FwwKeys:
-> "createdAt"` and have not been migrated yet; treat the table above as the
-> policy you should configure, and check the plugin you are using.
+The TypeScript ORM integration fixture deliberately opts into
+`fwwKeys: "createdAt"` to test that optional capability; it is not a production
+default.
 
 ## Inventory
 
@@ -65,11 +63,13 @@ semantics you actually want. Full write-up in
 | sqlx | `plugins/rust/sqlx/src/lib.rs` | same three symbols | **no** | **caller's job** |
 | seaorm | `plugins/rust/seaorm/src/lib.rs` | same three symbols | **no** | **caller's job** |
 | gorm | `plugins/go/gorm/syncer.go` | `SyncerPlugin{Options, Columns}` via `db.Use()` | yes, reads inside the update hook | `SELECT … FOR UPDATE`, **only useful if the caller opens a transaction** |
+| ent | `plugins/go/ent/syncer.go` | `Reconciler.Merge()`, `Reconcile(load, save)` | through generated-client closures | caller must use one transactional Ent client |
+| bun | `plugins/go/bun/syncer.go` | `Reconciler.MergeValues()`, `BeforeUpdate()` | **no** — model-hook helper | caller must load with `FOR UPDATE` inside `RunInTx` |
+| drift | `plugins/dart/drift/lib/syncer_drift.dart` | `DriftSyncer.merge()`, `reconcileJsonColumn()` | yes, read+write | one Drift transaction; SQLite serializes writers |
+| floor | `plugins/dart/floor/lib/syncer_floor.dart` | `FloorSyncer.merge()`, `reconcile(load, save)` | through generated-DAO closures | caller must use one Floor/sqflite transaction |
+| isar | `plugins/dart/isar/lib/syncer_isar.dart` | `IsarSyncer.mergeMaps()`, `reconcile(load, save)` | through generated-collection closures | caller must use `isar.writeTxn` |
 | ecto | `plugins/beam/ecto/lib/ecto_syncer.ex` | `merge_jsonb/3`, `merge_value/3`, `crdt_options/1`, `engine_version/0` | **no** — operates on a changeset | **caller's job** |
-
-`plugins/dart/drift` also exists but is a **stub**: `SyncerInterceptor.runUpdate`
-forwards to the executor unchanged and the binding import is commented out. It
-performs no merge. It is not one of the nine and has no tests.
+| ash | `plugins/beam/ash/lib/opto_sync_ash.ex` | `merge_attribute/3`, `merge_value/3` | **no** — operates on an Ash changeset | caller/data layer must keep the update transactional |
 
 ---
 
@@ -79,15 +79,15 @@ Read-modify-write is the shape of every one of these plugins: read the stored
 document, merge the incoming one on top, write the result. Without a lock, two
 writers read the same base and the second write erases the first writer's
 contribution. This is not theoretical — it was measured, fixed, and pinned by
-regression tests for four of the nine plugins.
+regression tests for the database-writing adapters.
 
 ### Three tiers
 
 | Tier | Plugins | What you must do |
 |---|---|---|
-| **Protects you** | kysely, typeorm, prisma | Nothing extra. Optionally pass your own transaction. |
-| **Protects you only inside a caller transaction** | gorm | Wrap the update in `db.Transaction(...)`. Outside one, merges are lost. |
-| **Cannot protect you** | drizzle, diesel, sqlx, seaorm, ecto | Provide the lock yourself: `SELECT … FOR UPDATE` in a transaction, or an optimistic lock. |
+| **Protects you** | kysely, typeorm, prisma, drift | Nothing extra. Optionally pass your own transaction where supported. |
+| **Protects you only inside a caller transaction** | gorm, ent, bun, floor, isar | Follow the adapter README and use the ORM's transaction surface. |
+| **Cannot protect you** | drizzle, diesel, sqlx, seaorm, ecto, ash | Provide the lock yourself: `SELECT … FOR UPDATE` in a transaction, or an optimistic lock. |
 
 ### Measured lost-update fixes
 
@@ -137,7 +137,7 @@ Consequences, stated plainly:
 
 - There is **no drizzle lost-update test**, because there is no drizzle code path
   that could pass or fail one — `plugins/typescript/README.md` lists this under
-  "What is NOT covered", and the nine tests in `drizzle.test.ts` are about column
+  "What is NOT covered", and the tests in `drizzle.test.ts` are about column
   typing, merge correctness, persistence, idempotency, override reach, option
   forwarding, and error handling. None of them is concurrent.
 - `performZeroDeserializationMerge` returns a **parsed object**, so writing it
@@ -331,9 +331,8 @@ policy (`MergeByKey` on `"id"`, timestamps on, `updatedAt,syncedAt` LWW).
 `detect_circular_refs` is hard-coded `false` and there is no override-callback
 surface (the Rust binding has none).
 
-⚠️ These crates still default `fww_keys` to `"createdAt"`, which the canonical
-policy no longer does — see [Why there is no FWW key](#why-there-is-no-fww-key).
-Set `fww_keys: String::new()` explicitly until they are migrated.
+The three crates default `fww_keys` to an empty string, matching the canonical
+policy. Set it explicitly only to opt into node-level First-Write-Wins.
 
 Failure is `Err(ReconcileError::InvalidJson)` — one variant, covering invalid
 JSON, an interior NUL byte, and a result that will not deserialize.
@@ -574,16 +573,17 @@ with persistence re-read over an independent connection.
 
 | Plugin | Status | Test suite | Kind | Concurrency test | Run in CI? |
 |---|---|---|---|---|---|
-| drizzle | implemented | `plugins/typescript/test/drizzle.test.ts` (9 tests) | integration (Postgres + `pg` + real `drizzle-orm/node-postgres`) | **none possible** — helper is in-memory | no (type-check only) |
-| kysely | implemented | `test/kysely.test.ts` (15 tests) | integration | **yes** — 8 writers, `FOR UPDATE` | no (type-check only) |
-| typeorm | implemented | `test/typeorm.test.ts` (15 tests) | integration | **yes** — 8 writers, `pessimistic_write` | no (type-check only) |
-| prisma | implemented | `test/prisma.test.ts` (14 tests + a skip guard) | integration (real generated client) | **yes** — 8 writers, CAS + retry | no (type-check only) |
-| core contract | — | `test/core-contract.test.ts` (8 tests) | no DB needed, but the runner waits for Postgres first | n/a | no |
+| drizzle | implemented | `plugins/typescript/test/drizzle.test.ts` | integration (Postgres + `pg` + real `drizzle-orm/node-postgres`) | **none possible** — helper is in-memory | **yes** |
+| kysely | implemented | `test/kysely.test.ts` | integration | **yes** — 8 writers, `FOR UPDATE` | **yes** |
+| typeorm | implemented | `test/typeorm.test.ts` | integration | **yes** — 8 writers, `pessimistic_write` | **yes** |
+| prisma | implemented | `test/prisma.test.ts` | integration (real generated client) | **yes** — 8 writers, CAS + retry | **yes** |
+| core contract | — | `test/core-contract.test.ts` | native core contract | n/a | **yes** |
 | diesel | implemented | `plugins/rust/diesel/src/lib.rs` `#[cfg(test)]` (3 tests) | **unit only** — no Diesel, no database | no | **yes** (`cargo test`) |
-| sqlx | implemented | `plugins/rust/sqlx/src/lib.rs` (4 tests) | **unit only** — no sqlx, no database | no | **yes** |
+| sqlx | implemented | `plugins/rust/sqlx/src/lib.rs` (5 tests) | **unit only** — no sqlx, no database | no | **yes** |
 | seaorm | implemented | `plugins/rust/seaorm/src/lib.rs` (4 tests) | **unit only** — no SeaORM, no database | no | **yes** |
-| gorm | implemented | `plugins/go/gorm/syncer_test.go` (19 tests) | integration (real `gorm.io/driver/postgres`) | **yes** — both the losing and the safe form | partly — CI runs `go build` + `go vet` only |
-| ecto | implemented | `plugins/beam/ecto/test/opto_sync_ecto_test.exs` (22 tests, plus `doctest OptoSyncEcto` → 3 doctests in `lib/ecto_syncer.ex`; hermetic) and `test/postgres_integration_test.exs` (4 tests, tagged `:integration`, excluded by default) | changeset unit tests + opt-in integration | **no** — the "two writers" test is sequential | **no** — no BEAM job exists in `.github/workflows/ci.yml` |
+| gorm | implemented | `plugins/go/gorm/syncer_test.go` (19 tests) | integration (real `gorm.io/driver/postgres`) | **yes** — both the losing and the safe form | **yes**, race detector |
+| drift | implemented | `plugins/dart/drift/test/syncer_drift_test.dart` | native core + in-memory SQLite | transactional helper | **yes** |
+| ecto | implemented | hermetic changeset/doctest suite plus opt-in Postgres integration | changeset unit tests + opt-in integration | **no** — the "two writers" test is sequential | **yes**, hermetic suite |
 
 Test counts above are `test(...)` / `#[test]` / `func Test…` declarations counted
 in the files named.
@@ -593,19 +593,16 @@ in the files named.
 | Command | Result |
 |---|---|
 | `cd plugins/rust/diesel && cargo test` | 3 passed, 0 failed (1 doc-test ignored) |
-| `cd plugins/rust/sqlx && cargo test` | 4 passed, 0 failed (1 ignored) |
+| `cd plugins/rust/sqlx && cargo test` | 5 passed, 0 failed |
 | `cd plugins/rust/seaorm && cargo test` | 4 passed, 0 failed (1 ignored) |
-| `cd plugins/go/gorm && go test ./...` | `ok` — **all 19 tests SKIP** without Postgres (`t.Skipf` in `openDB`) |
-| `cd plugins/typescript && npm run typecheck` | both configs clean (stubs + real packages) |
-| `plugins/typescript/test/core-contract.test.ts` via a standalone runner | 6/8 tests pass; 5 assertions fail (stale version + stale array-override claim) |
-| the `fixtures.ts` policy merge, with and without `OverrideStrategy` | reproduces `EXPECTED_MERGED` / `EXPECTED_MERGED_WITH_OVERRIDE` byte-for-byte under 0.2.1 |
-| `performZeroDeserializationMerge` (drizzle helper, in-memory) | reconciles per policy; invalid JSON → descriptive throw |
+| `cd plugins/go/gorm && OPTO_SYNC_TEST_PG=… go test -race -count=1 ./...` | all 19 live Postgres tests passed |
+| `cd plugins/typescript && OPTO_SYNC_TEST_PG=… npm test` | 209 assertions passed across the core contract and four real ORMs |
+| `cd plugins/dart/drift && dart test` | 3 native-core/SQLite tests passed |
+| BEAM binding + Ecto in `bindings/beam/Dockerfile.test` | 35 binding tests + 4 doctests and 26 Ecto tests + 3 doctests passed |
 
-**Not run here:** every DB-backed suite (drizzle, kysely, typeorm, prisma, gorm)
-— they need a Postgres instance, which was deliberately not started; and both
-Ecto suites, because `mix`/`elixir` are not installed on this machine (the
-BEAM toolchain lives in `bindings/beam/Dockerfile.test`). The commands are
-documented below unchanged from the plugin READMEs.
+The opt-in Ecto/Postgres integration and database-backed Diesel/sqlx/SeaORM
+flows are still not part of the default verification. The commands below remain
+useful for reproducing the live suites.
 
 ```bash
 # TypeScript plugin suites
@@ -633,9 +630,9 @@ The native addon must be built before the TypeScript suites:
 
 ### What is not covered anywhere
 
-- **Postgres only.** Every integration test targets Postgres `jsonb`. MySQL /
-  MariaDB `JSON`, SQLite and CockroachDB are untested, and the `::text`
-  projections and `CAST(… AS jsonb)` casts are Postgres-specific.
+- **ORM database integrations are Postgres-first.** SQLite is covered by the
+  loadable SQL extension and Drift helper; MySQL/MariaDB and CockroachDB remain
+  untested.
 - **No drizzle transactional helper, and therefore no drizzle lost-update test.**
 - **Drizzle dialects other than `node-postgres`** — not `postgres.js`, neon, or
   bun-sql.
@@ -654,18 +651,7 @@ The native addon must be built before the TypeScript suites:
   is never wired into a live entity column.
 - **Prisma CAS on nullable columns without `dbNull`** — falls back to a plain
   `update`, leaving a lost-update window on the NULL → first-document transition.
-- **CI runs no DB-backed plugin test.** The `plugins` job runs `cargo test` for
-  the three Rust crates, `tsc --noEmit` for the TypeScript plugins, and
-  `go build` + `go vet` for gorm. There is no wasm job and no BEAM job.
-
-## Documentation drift found while verifying (reported, not fixed)
-
-| Where | Claim | Reality |
-|---|---|---|
-| `plugins/typescript/test/core-contract.test.ts` | `version() === '0.2.0'`; the override callback is not consulted for arrays under `UNION`/`MERGE_BY_KEY` | core is `0.2.1`; the callback reaches arrays under every strategy — 2 tests / 5 assertions fail |
-| `plugins/typescript/README.md` §"Two sharp edges" item 2 | same array-override claim, plus "under the canonical policy that override never fires" | it does fire |
-| `plugins/typescript/test/fixtures.ts` (`OverrideStrategy` doc comment) | same claim ("verified against core v0.2.0") | stale; the expected documents themselves are still correct |
-| `plugins/typescript/README.md`, `plugins/*/README.md`, plugin module docs | "the `syncer.c` core (v0.2.0)" / `engine_version() #=> "0.2.0"` | `0.2.1` |
-| `.github/workflows/ci.yml` (plugins job comment) | "plugins/typescript has no package.json, so there is nothing to install first" | it has a `package.json` with real devDependencies and five test scripts; CI simply chooses not to install them |
-| `.github/workflows/ci.yml` (plugins job comment) | "the TypeScript plugins are type-check only" | true *of CI*, but the suites are real integration tests — worth not reading as "no integration tests exist" |
-| `plugins/dart/drift/README.md` | "Add `SyncerInterceptor` to your database connection" | the interceptor is a stub that merges nothing |
+CI now exercises the real TypeScript ORM/Postgres suite, GORM under the race
+detector, Drift against SQLite, the WASM binding, the BEAM binding/Ecto suite,
+and both SQL extensions. The historical documentation drift found in the
+earlier audit has been corrected rather than left as a known discrepancy.

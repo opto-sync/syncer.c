@@ -18,5 +18,5 @@ let merged = reconcile_values(&model.data, &incoming, &ReconcileOptions::default
 // active.update(db).await?;
 ```
 
-Defaults: Last-Write-Wins on `updatedAt,syncedAt`, First-Write-Wins on
-`createdAt`, arrays merged element-by-identity on `id` (MergeByKey).
+Defaults: Last-Write-Wins on `updatedAt,syncedAt`, no First-Write-Wins
+selector, and arrays merged element-by-identity on `id` (MergeByKey).

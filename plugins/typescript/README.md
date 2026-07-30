@@ -32,7 +32,6 @@ export const POLICY = {
   arrayMatchKeys: 'id',
   resolveByTimestamp: true,
   lwwKeys: 'updatedAt,syncedAt',
-  fwwKeys: 'createdAt',
 };
 ```
 
@@ -42,8 +41,9 @@ What it buys you, all asserted through the database:
 - **Keyed-array reconciliation.** Array elements are matched by `id`. A *stale*
   element (older `updatedAt`) is rejected while a *fresh sibling in the same
   array* is applied and an unseen `id` is appended.
-- **LWW / FWW.** `updatedAt`/`syncedAt` are last-write-wins; `createdAt` is
-  first-write-wins, so a re-creation attempt cannot overwrite the original.
+- **LWW.** `updatedAt`/`syncedAt` are last-write-wins. First-write-wins remains
+  available explicitly, but is not a default because it vetoes the whole node,
+  not only `createdAt`.
 - **Idempotency.** Re-applying the same payload converges (arrays do not grow).
 
 ### Two sharp edges in the policy's semantics
@@ -64,10 +64,9 @@ These are core behaviours, not plugin bugs. They are pinned by
    intact. Before 0.2.1 arrays skipped the callback under any non-`REPLACE`
    strategy, which silently disabled array overrides under the canonical policy.
 
-   Consequence: the `UserProfileMerger` example in
-   `bindings/typescript/BaseMergeStrategy.ts` overrides `tags` and `embedding`,
-   both arrays. Under the canonical `MERGE_BY_KEY` policy **that override never
-   fires.** Write strategies against scalars/objects, or use `REPLACE`.
+   Consequence: array overrides in `UserProfileMerger` now fire before the
+   configured array strategy. Return `undefined` to decline and let
+   `MERGE_BY_KEY` continue.
 
 Always bridge a strategy through `BaseMergeStrategy.toNativeCallback()` — the
 plugins do this for you. Binding `handleConflict` directly never matches,
@@ -192,7 +191,7 @@ Two configurations, both run by `npm run typecheck`:
 | kysely  | A **missing row** fell back to `{}`, merged, then issued an `UPDATE` matching 0 rows — the caller got a merged string back and believed it was saved. | Throw `SyncerRowNotFoundError`; also check `numUpdatedRows`. |
 | kysely  | A **SQL NULL** column crashed the native addon with `TypeError: String expected`. | Treat NULL as `{}`. |
 | kysely  | **Lost updates.** Read-modify-write with no lock; 8 concurrent syncs left only **2** merges. | One transaction + `FOR UPDATE`; reuses a caller transaction. |
-| kysely  | Result type widened to a union of `Insert/Delete/Update/MergeResult`, so `.raw_json` did not type-check against the real package (the stub returned `any` and hid it). | Cast the aliased projection to its known shape. |
+| kysely  | Runtime-generic table/column unions stopped type-checking on the patched 0.29 release, and the old signature rejected caller-owned `Transaction<DB>` handles. | Use typed raw builders with identifier nodes/bound values and accept either `Kysely<DB>` or `Transaction<DB>`. |
 | typeorm | Missing row silently no-op'd, same as kysely. | Throw `SyncerRowNotFoundError`; also check `affected`. |
 | typeorm | SQL NULL column crashed the addon. | Treat NULL as `{}`. |
 | typeorm | **Lost updates**; 4 of 8 merges lost even inside a transaction. | Transaction + `setLock('pessimistic_write')`. |

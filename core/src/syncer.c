@@ -489,6 +489,37 @@ static int ts_compare(const char* s1, const char* s2) {
     return strcmp(s1, s2);
 }
 
+/* Resolve one timestamp selector against the two nodes being compared.
+ *
+ * Ordinary selectors remain direct object keys for backwards compatibility:
+ *     updatedAt
+ *
+ * A selector beginning "#/" is a JSON Pointer relative to the current merge
+ * node, which lets callers keep sync metadata in a nested object:
+ *     #/_sync/updatedAt
+ *
+ * yyjson implements RFC 6901, including "~0" (tilde), "~1" (slash), and array
+ * indices. The leading '#' is our explicit selector marker and is not passed
+ * to yyjson. Requiring it avoids changing the meaning of an existing literal
+ * key whose name begins with '/'.
+ */
+static void timestamp_selector_values(yyjson_mut_val* v1,
+                                      yyjson_val* v2,
+                                      const char* selector,
+                                      size_t selector_len,
+                                      yyjson_mut_val** t1_out,
+                                      yyjson_val** t2_out) {
+    *t1_out = NULL;
+    *t2_out = NULL;
+    if (selector_len >= 2 && selector[0] == '#' && selector[1] == '/') {
+        *t1_out = yyjson_mut_ptr_getn(v1, selector + 1, selector_len - 1);
+        *t2_out = yyjson_ptr_getn(v2, selector + 1, selector_len - 1);
+        return;
+    }
+    *t1_out = yyjson_mut_obj_getn(v1, selector, selector_len);
+    *t2_out = yyjson_obj_getn(v2, selector, selector_len);
+}
+
 static bool check_crdt_keys(yyjson_mut_val* v1, yyjson_val* v2, const char* keys_str, bool is_fww) {
     if (!keys_str || !v1 || !v2) return false;
 
@@ -504,8 +535,9 @@ static bool check_crdt_keys(yyjson_mut_val* v1, yyjson_val* v2, const char* keys
         while (len > 0 && seg[len - 1] == ' ') len--;
 
         if (len > 0) {
-            yyjson_mut_val* t1 = yyjson_mut_obj_getn(v1, seg, len);
-            yyjson_val*     t2 = yyjson_obj_getn(v2, seg, len);
+            yyjson_mut_val* t1;
+            yyjson_val*     t2;
+            timestamp_selector_values(v1, v2, seg, len, &t1, &t2);
             if (t1 && t2) {
                 int  cmp = 0;
                 bool comparable = false;
@@ -995,6 +1027,13 @@ char* syncer_merge_json_ex(const char* json1,
                             const syncer_merge_options_t* opts)
 {
     if (!json1 && !json2) return NULL;
+    if (opts && (unsigned)opts->array_strategy >
+                    (unsigned)SYNCER_ARRAY_MERGE_BY_KEY) {
+        /* An out-of-range enum previously entered the array-frame fallthrough
+           and silently kept the base array. Reject malformed FFI input instead
+           of returning a plausible but incorrect merge. */
+        return NULL;
+    }
 
     /* One-sided merge: still parse the present side, so invalid JSON returns
        NULL (per the API contract) instead of being echoed back verbatim. */

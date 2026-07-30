@@ -33,7 +33,7 @@ end
 OptoSyncEcto.merge_jsonb(changeset, field_or_fields, opts \\ [])
 OptoSyncEcto.merge_value(base, incoming, opts \\ [])  #=> {:ok, value} | {:error, :merge_failed}
 OptoSyncEcto.crdt_options(overrides \\ [])
-OptoSyncEcto.engine_version()                         #=> "0.2.0"
+OptoSyncEcto.engine_version()                         #=> "0.2.1"
 ```
 
 ### Rules
@@ -64,8 +64,9 @@ silently reconciling with the wrong policy.
 
 `OptoSyncEcto.crdt_options/1` is the project-wide policy: `:merge_by_key` on
 `"id"`, timestamp resolution on, `updatedAt`/`syncedAt` Last-Write-Wins,
-`createdAt` First-Write-Wins. With it, re-applying the same sync payload is
-idempotent.
+and no First-Write-Wins selector. With it, re-applying the same sync payload is
+idempotent. Opt into `fww_keys: "createdAt"` only when a newer `createdAt`
+should veto the entire incoming node.
 
 ### Concurrency note
 

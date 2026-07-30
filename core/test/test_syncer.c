@@ -449,6 +449,69 @@ static void test_crdt_equal_timestamps_merge(void) {
 }
 
 /* ========================================================================== */
+/*  Test: timestamp selectors can address nested metadata via JSON Pointer    */
+/* ========================================================================== */
+
+static void test_crdt_json_pointer_timestamps(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.resolve_by_timestamp = true;
+    opts.lww_keys = "#/_sync/updatedAt";
+
+    /* The timestamp is nested but gates the whole `doc` node. */
+    const char* base =
+        "{\"doc\":{\"_sync\":{\"updatedAt\":\"0000000000200\"},"
+        "\"title\":\"base\",\"keep\":true}}";
+    const char* stale =
+        "{\"doc\":{\"_sync\":{\"updatedAt\":\"0000000000100\"},"
+        "\"title\":\"stale\",\"newField\":\"must-not-leak\"}}";
+    char* r = syncer_merge_json_ex(base, stale, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "title", "base"));
+    assert(strstr(r, "must-not-leak") == NULL);
+    syncer_free(r);
+
+    /* A newer nested stamp accepts the incoming node. */
+    const char* fresh =
+        "{\"doc\":{\"_sync\":{\"updatedAt\":\"0000000000300\"},"
+        "\"title\":\"fresh\"}}";
+    r = syncer_merge_json_ex(base, fresh, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "title", "fresh"));
+    syncer_free(r);
+
+    /* RFC 6901 escaping and array indices are delegated to yyjson's pointer
+       resolver: "meta/clock" is encoded as "meta~1clock". */
+    opts.lww_keys = "#/versions/0/meta~1clock";
+    base =
+        "{\"doc\":{\"versions\":[{\"meta/clock\":200}],\"title\":\"base\"}}";
+    stale =
+        "{\"doc\":{\"versions\":[{\"meta/clock\":100}],\"title\":\"stale\"}}";
+    r = syncer_merge_json_ex(base, stale, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "title", "base"));
+    syncer_free(r);
+
+    /* Plain selectors are still literal direct keys, including a key whose
+       name starts with '/'. Only the explicit "#/" prefix means pointer. */
+    opts.lww_keys = "/updatedAt";
+    base = "{\"doc\":{\"/updatedAt\":200,\"title\":\"base\"}}";
+    stale = "{\"doc\":{\"/updatedAt\":100,\"title\":\"stale\"}}";
+    r = syncer_merge_json_ex(base, stale, &opts);
+    assert(r != NULL);
+    assert(json_has_str(r, "title", "base"));
+    syncer_free(r);
+}
+
+static void test_invalid_array_strategy_is_rejected(void) {
+    syncer_merge_options_t opts = syncer_default_options();
+    opts.array_strategy = (syncer_array_strategy_t)99;
+    assert(syncer_merge_json_ex("{\"a\":[1]}", "{\"a\":[2]}", &opts) == NULL);
+
+    opts.array_strategy = (syncer_array_strategy_t)-1;
+    assert(syncer_merge_json_ex("{\"a\":[1]}", "{\"a\":[2]}", &opts) == NULL);
+}
+
+/* ========================================================================== */
 /*  Test: one-sided merges validate the present side                          */
 /* ========================================================================== */
 
@@ -1055,6 +1118,8 @@ int main(void) {
     TEST(test_crdt_long_key_list);
     TEST(test_crdt_keys_with_spaces);
     TEST(test_crdt_equal_timestamps_merge);
+    TEST(test_crdt_json_pointer_timestamps);
+    TEST(test_invalid_array_strategy_is_rejected);
     TEST(test_one_sided_null_validates);
     TEST(test_callback_bad_json_falls_back);
     TEST(test_union_dedups_objects);

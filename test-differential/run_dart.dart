@@ -28,7 +28,7 @@ void main(List<String> args) {
   final options = MergeOptions(
     arrayStrategy: ArrayMergeStrategy.mergeByKey, // 4
     resolveByTimestamp: true,
-    lwwKeys: 'updatedAt,syncedAt',
+    lwwKeys: 'updatedAt,syncedAt,#/_sync/updatedAt',
     fwwKeys: 'createdAt',
     arrayMatchKeys: 'id',
     maxDepth: 0,

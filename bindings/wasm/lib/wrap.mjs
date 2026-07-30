@@ -115,6 +115,7 @@ export function createBinding(moduleFactory) {
     if (typeof baseJson !== 'string' || typeof incomingJson !== 'string') {
       throw new TypeError('String expected');
     }
+    if (baseJson.includes('\0') || incomingJson.includes('\0')) return null;
 
     /* Function-before-object dispatch, same ordering trap as the Node binding:
        a function IS an object, so testing IsObject first makes the legacy
@@ -152,10 +153,44 @@ export function createBinding(moduleFactory) {
       const pFww = alloc(opts.fwwKeys);
       const pMatch = alloc(opts.arrayMatchKeys);
 
-      /* `| 0` / `>>> 0` are exactly ToInt32 / ToUint32 — the same coercion
-         node-addon-api's Int32Value()/Uint32Value() apply. */
-      const strategy = typeof opts.arrayStrategy === 'number' ? opts.arrayStrategy | 0 : 0;
-      const maxDepth = typeof opts.maxDepth === 'number' ? opts.maxDepth >>> 0 : 0;
+      const requestedStrategy = opts.arrayStrategy ?? 0;
+      if (
+        !Number.isInteger(requestedStrategy) ||
+        requestedStrategy < ArrayStrategy.REPLACE ||
+        requestedStrategy > ArrayStrategy.MERGE_BY_KEY
+      ) {
+        throw new RangeError('arrayStrategy must be an integer from 0 through 4');
+      }
+      const strategy = requestedStrategy;
+      const requestedDepth = opts.maxDepth ?? 0;
+      if (
+        !Number.isInteger(requestedDepth) ||
+        requestedDepth < 0 ||
+        requestedDepth > 0xffffffff
+      ) {
+        throw new RangeError('maxDepth must be an integer from 0 through 4294967295');
+      }
+      const maxDepth = requestedDepth;
+      if (
+        opts.detectCircularRefs !== undefined &&
+        typeof opts.detectCircularRefs !== 'boolean'
+      ) {
+        throw new TypeError('detectCircularRefs must be a boolean');
+      }
+      if (
+        opts.resolveByTimestamp !== undefined &&
+        typeof opts.resolveByTimestamp !== 'boolean'
+      ) {
+        throw new TypeError('resolveByTimestamp must be a boolean');
+      }
+      for (const key of ['lwwKeys', 'fwwKeys', 'arrayMatchKeys']) {
+        if (opts[key] !== undefined && typeof opts[key] !== 'string') {
+          throw new TypeError(`${key} must be a string`);
+        }
+        if (typeof opts[key] === 'string' && opts[key].includes('\0')) {
+          throw new TypeError(`${key} may not contain a NUL byte`);
+        }
+      }
       const detect = opts.detectCircularRefs === true ? 1 : 0;
       const resolve = opts.resolveByTimestamp === true ? 1 : 0;
 

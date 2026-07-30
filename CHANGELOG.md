@@ -13,6 +13,31 @@ repository. `syncer_version()` is the authoritative version string and returns
 
 ---
 
+## Unreleased
+
+### Added
+
+- Timestamp selectors now accept RFC 6901 JSON Pointers prefixed with `#`
+  (for example `#/_sync/updatedAt`) in addition to direct keys. The C core,
+  browser WASM artifact, differential runners, and TypeScript/Dart/Rust client
+  clock observers share the same contract.
+- Database-native SQL interfaces: a SQLite loadable extension and a PostgreSQL
+  PGXS extension with `opto_sync_merge(jsonb,jsonb,jsonb)` plus a generic
+  `BEFORE UPDATE` JSONB reconciliation trigger.
+- The Dart Drift adapter now performs real in-memory and transactional
+  read/merge/write reconciliation with bound values and validated identifiers.
+- CI coverage for both SQL extensions, Drift analysis/tests, and GORM race
+  tests.
+
+### Fixed
+
+- Invalid array-strategy enum values are rejected instead of silently retaining
+  the base array.
+- Node, WASM, Dart, and Go bindings reject embedded NUL truncation and malformed
+  scalar options rather than coercing them into a different merge policy.
+- Removed `createdAt` First-Write-Wins from Rust ORM and BEAM canonical
+  defaults. FWW remains available as an explicit node-level veto.
+
 ## [0.2.1] — 2026-07-25
 
 ### Performance

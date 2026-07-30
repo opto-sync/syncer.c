@@ -35,8 +35,9 @@ defmodule Syncer do
 
   `crdt_options/1` returns the option set the rest of opto-sync uses for
   reconciling replicated documents — match array elements by `"id"`, resolve
-  conflicts by timestamp, `updatedAt`/`syncedAt` as Last-Write-Wins and
-  `createdAt` as First-Write-Wins — which makes retried syncs idempotent:
+  conflicts by timestamp, and `updatedAt`/`syncedAt` as Last-Write-Wins.
+  First-Write-Wins is deliberately unset because it vetoes an entire node,
+  rather than protecting one field:
 
       opts = Syncer.crdt_options()
       {:ok, once} = Syncer.merge(base, incoming, opts)
@@ -147,8 +148,7 @@ defmodule Syncer do
         array_strategy: :merge_by_key,
         array_match_keys: "id",
         resolve_by_timestamp: true,
-        lww_keys: "updatedAt,syncedAt",
-        fww_keys: "createdAt"
+        lww_keys: "updatedAt,syncedAt"
       ]
 
   `overrides` are merged on top, so you can keep the timestamp policy and
@@ -163,8 +163,7 @@ defmodule Syncer do
         array_strategy: :merge_by_key,
         array_match_keys: "id",
         resolve_by_timestamp: true,
-        lww_keys: "updatedAt,syncedAt",
-        fww_keys: "createdAt"
+        lww_keys: "updatedAt,syncedAt"
       ],
       overrides
     )

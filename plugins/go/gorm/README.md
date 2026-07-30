@@ -18,7 +18,6 @@ db.Use(&syncer_gorm.SyncerPlugin{
         ArrayStrategy:      syncer.ArrayMergeByKey,
         ResolveByTimestamp: true,
         LwwKeys:            "updatedAt,syncedAt",
-        FwwKeys:            "createdAt",
     },
     // Columns: []string{"data"}, // optional; default: all fields with type json/jsonb
 })

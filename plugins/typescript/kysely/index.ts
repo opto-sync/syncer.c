@@ -1,6 +1,6 @@
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
 import { mergeJson, MergeOptions } from '../../../bindings/typescript';
-import { Kysely, sql } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 
 /**
  * Merge options a plugin caller may tune. The override callback is always
@@ -39,7 +39,7 @@ export class SyncerRowNotFoundError extends Error {
  * @throws SyncerRowNotFoundError when no row matches `idColumn = idValue`.
  */
 export async function kyselySyncJsonb<DB, TableName extends keyof DB & string, T>(
-  db: Kysely<DB>,
+  db: Kysely<DB> | Transaction<DB>,
   table: TableName,
   idColumn: keyof DB[TableName] & string,
   idValue: any,
@@ -48,19 +48,18 @@ export async function kyselySyncJsonb<DB, TableName extends keyof DB & string, T
   strategy: BaseMergeStrategy<T>,
   options?: SyncerMergeOptions
 ): Promise<string> {
-  const run = async (trx: Kysely<DB>): Promise<string> => {
-    // 1. Fetch raw string using sql`` tagged template, taking a row lock so a
-    //    concurrent sync of the same row cannot interleave read-modify-write.
-    //    `sql.ref` quotes the identifier, so the column name cannot inject SQL.
-    //    The result is cast because a GENERIC table name defeats Kysely's
-    //    output inference (it widens to a union of Insert/Delete/Update
-    //    results); the projection is aliased right here, so the shape is known.
-    const rawQuery = (await trx
-      .selectFrom(table)
-      .select(sql<string>`${sql.ref(jsonColumn)}::text`.as('raw_json'))
-      .where(idColumn as any, '=', idValue)
-      .forUpdate()
-      .executeTakeFirst()) as { raw_json: string | null } | undefined;
+  const run = async (trx: Kysely<DB> | Transaction<DB>): Promise<string> => {
+    // 1. Fetch raw text and lock the row. A typed raw builder is used here
+    // because Kysely 0.29 intentionally rejects method chaining through a
+    // runtime-generic table/column union. Identifiers remain identifier nodes
+    // and values remain bound parameters.
+    const selected = await sql<{ raw_json: string | null }>`
+      SELECT ${sql.ref(jsonColumn)}::text AS raw_json
+      FROM ${sql.table(table)}
+      WHERE ${sql.ref(idColumn)} = ${idValue}
+      FOR UPDATE
+    `.execute(trx);
+    const rawQuery = selected.rows[0];
 
     // A missing row used to fall back to '{}' and then issue an UPDATE that
     // matched zero rows, so the caller received a merged string back and
@@ -81,15 +80,14 @@ export async function kyselySyncJsonb<DB, TableName extends keyof DB & string, T
 
     // 3. Save raw string directly back as JSONB. `mergedString` is interpolated
     //    into the sql`` template as a BOUND PARAMETER, never as SQL text.
-    const result = await trx
-      .updateTable(table)
-      .set({
-        [jsonColumn]: sql`CAST(${mergedString} AS jsonb)`
-      } as any)
-      .where(idColumn as any, '=', idValue)
-      .executeTakeFirst();
+    const updated = await sql<{ updated: number }>`
+      UPDATE ${sql.table(table)}
+      SET ${sql.ref(jsonColumn)} = CAST(${mergedString} AS jsonb)
+      WHERE ${sql.ref(idColumn)} = ${idValue}
+      RETURNING 1 AS updated
+    `.execute(trx);
 
-    if (result && result.numUpdatedRows === BigInt(0)) {
+    if (updated.rows.length === 0) {
       throw new SyncerRowNotFoundError(table, idColumn, idValue);
     }
 

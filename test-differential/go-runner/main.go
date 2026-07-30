@@ -30,7 +30,7 @@ func main() {
 		MaxDepth:           0,
 		DetectCircularRefs: false,
 		ResolveByTimestamp: true,
-		LwwKeys:            "updatedAt,syncedAt",
+		LwwKeys:            "updatedAt,syncedAt,#/_sync/updatedAt",
 		FwwKeys:            "createdAt",
 		ArrayMatchKeys:     "id",
 	}

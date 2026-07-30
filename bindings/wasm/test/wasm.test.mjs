@@ -63,6 +63,37 @@ test('ArrayStrategy constant map matches the C enum', () => {
   });
 });
 
+test('invalid array strategies fail loudly instead of silently keeping the base array', () => {
+  for (const invalid of [-1, 5, 1.5, NaN, Infinity, '4']) {
+    assert.throws(
+      () => mergeJson('{"a":[1]}', '{"a":[2]}', { arrayStrategy: invalid }),
+      /arrayStrategy must be an integer from 0 through 4/,
+    );
+  }
+});
+
+test('malformed scalar options fail instead of being coerced or ignored', () => {
+  for (const maxDepth of [-1, 1.5, NaN, Infinity, 0x100000000, '1']) {
+    assert.throws(
+      () => mergeJson('{}', '{}', { maxDepth }),
+      /maxDepth must be an integer from 0 through 4294967295/,
+    );
+  }
+  assert.throws(
+    () => mergeJson('{}', '{}', { resolveByTimestamp: 1 }),
+    /resolveByTimestamp must be a boolean/,
+  );
+  assert.throws(
+    () => mergeJson('{}', '{}', { lwwKeys: ['updatedAt'] }),
+    /lwwKeys must be a string/,
+  );
+  assert.throws(
+    () => mergeJson('{}', '{}', { arrayMatchKeys: 'id\0fallback' }),
+    /arrayMatchKeys may not contain a NUL byte/,
+  );
+  assert.strictEqual(mergeJson('{}\0{"smuggled":true}', '{}'), null);
+});
+
 /* ------------------------------------------------------------------ */
 /*  Core merge behaviour                                               */
 /* ------------------------------------------------------------------ */
@@ -70,6 +101,18 @@ test('ArrayStrategy constant map matches the C enum', () => {
 test('deep merge preserves siblings and applies incoming keys', () => {
   const out = mergeJson('{"a":1,"b":{"c":2}}', '{"b":{"d":3}}');
   assert.deepStrictEqual(JSON.parse(out), { a: 1, b: { c: 2, d: 3 } });
+});
+
+test('nested JSON-Pointer timestamp selectors execute inside the compiled wasm core', () => {
+  const out = mergeJson(
+    '{"_sync":{"updatedAt":200},"value":"base"}',
+    '{"_sync":{"updatedAt":100},"value":"stale"}',
+    {
+      resolveByTimestamp: true,
+      lwwKeys: '#/_sync/updatedAt',
+    },
+  );
+  assert.strictEqual(JSON.parse(out).value, 'base');
 });
 
 test('invalid JSON returns null (not a throw)', () => {

@@ -30,7 +30,7 @@ Timings below were measured on macOS/arm64 (M-series), warm caches unless noted.
 | 2 | Core property | `syncer.c/core/test/prop_test.c` | Idempotency + valid-output + crash-freedom over thousands of generated pairs | Violations on inputs nobody thought to write down | in the same 4.9 s |
 | 3 | Sanitizers | same two suites | No ASan/UBSan finding | Memory errors and UB that a passing assertion hides | 33 s |
 | 4 | Fuzzing | `syncer.c/core/test/fuzz/` | Coverage-guided exploration of inputs *and* option combinations; real LeakSanitizer | Leaks (macOS has no LSan) and deep parser/strategy interactions | build ≈2 min + `DURATION` per harness |
-| 5 | Differential | `syncer.c/test-differential/` | C, TypeScript, Dart, Rust, Go produce **byte-identical** output over 305 pairs, twice | One binding drifting from the others — including a *stale compiled core* | 24 s |
+| 5 | Differential | `syncer.c/test-differential/` | C, TypeScript, Dart, Rust, Go produce **byte-identical** output over 306 pairs, twice | One binding drifting from the others — including a *stale compiled core* | 24 s |
 | 6 | Per-binding | `syncer.c/bindings/*` | Each binding's own option surface, error mapping, and thread safety | An option that never reaches the core; a race in the binding glue | 0.1–9 s each |
 | 7 | ORM plugins | `syncer.c/plugins/*` | The read-merge-write path against a real database | Lost updates, missing-row no-ops, SQL-NULL crashes | s to minutes; most need Postgres |
 | 8 | Client libraries | `opto-sync-clients/clients/*` | Offline queue, durability, reconcile defaults, wasm↔native parity, real browser | A client whose default policy disagrees with the server's | 2–6 s each |
@@ -241,7 +241,7 @@ cd syncer.c/test-differential
 ./run_all.sh
 ```
 
-Measured: **305 corpus lines, byte-identical across C, TypeScript, Dart, Rust and
+Measured: **306 corpus lines, byte-identical across C, TypeScript, Dart, Rust and
 Go**, in 23.7 s including a node-gyp rebuild. Requires `cc`, `node`, `dart`,
 `cargo`, `go`, and `core/build/libsyncer.{dylib,so,dll}` for the Dart FFI runner.
 
@@ -249,15 +249,15 @@ Actual output:
 
 ```
 == [3/4] pass 1: differential merge ==
-OK: 305 lines byte-identical across c, ts, dart, rust, go
+OK: 306 lines byte-identical across c, ts, dart, rust, go
 
 == [4/4] pass 2: idempotency (re-merge own output with same incoming) ==
-OK: 305 lines byte-identical across pass1-c,    pass2-c
-OK: 305 lines byte-identical across pass1-ts,   pass2-ts
-OK: 305 lines byte-identical across pass1-dart, pass2-dart
-OK: 305 lines byte-identical across pass1-rust, pass2-rust
-OK: 305 lines byte-identical across pass1-go,   pass2-go
-OK: 305 lines byte-identical across c, ts, dart, rust, go
+OK: 306 lines byte-identical across pass1-c,    pass2-c
+OK: 306 lines byte-identical across pass1-ts,   pass2-ts
+OK: 306 lines byte-identical across pass1-dart, pass2-dart
+OK: 306 lines byte-identical across pass1-rust, pass2-rust
+OK: 306 lines byte-identical across pass1-go,   pass2-go
+OK: 306 lines byte-identical across c, ts, dart, rust, go
 ALL PASSES OK
 ```
 
@@ -267,9 +267,11 @@ requires the result to reproduce pass 1 byte-for-byte — per language *and* acr
 languages. So a binding cannot pass by being consistently wrong in a way that
 happens to be stable.
 
-All five runners use identical options: `arrayStrategy=MERGE_BY_KEY(4)`,
-`resolveByTimestamp=true`, `lwwKeys="updatedAt,syncedAt"`, `fwwKeys="createdAt"`,
-`arrayMatchKeys="id"`, `maxDepth=0`, no callback.
+All five runners use the same explicit stress policy:
+`arrayStrategy=MERGE_BY_KEY(4)`, `resolveByTimestamp=true`,
+`lwwKeys="updatedAt,syncedAt"`, `fwwKeys="createdAt"`,
+`arrayMatchKeys="id"`, `maxDepth=0`, no callback. The `fwwKeys` setting is
+deliberately opted into for differential coverage; it is not a library default.
 
 ### Why it force-rebuilds
 
@@ -466,21 +468,23 @@ Measured:
 
 | Client | Result | Time |
 |---|---|---|
-| `clients/ts` | 43 pass / 0 fail (`npm test` = build + `node --test`) | 3.8 s |
-| `clients/dart` | 8 tests, all passed | 2.1 s |
-| `clients/rust` | 7 unit + 2 durability integration + 1 doctest = 10 | 5.1 s |
+| `clients/ts` | 76 pass / 0 fail (`npm test` = build + `node --test`) | measured locally |
+| `clients/dart` | 37 tests, all passed | measured locally |
+| `clients/rust` | 43 unit + 2 durability integration + 2 doctests = 47 | measured locally |
 
 The TypeScript total breaks down per file as:
 
 | File | Tests | Covers |
 |---|---|---|
-| `test/reconcile.test.js` | 11 | reconcile semantics through the native addon |
-| `test/engine-parity.test.mjs` | 11 | wasm vs native byte-identity: 34 corpus cases, a 1000-document randomized corpus, idempotence agreement, and a guard that the two engines are genuinely different implementations rather than one stub |
+| `test/reconcile.test.js` | 12 | reconcile semantics through the native addon |
+| `test/engine-parity.test.mjs` | 11 | wasm vs native byte-identity: 36 corpus cases, a 1000-document randomized corpus, idempotence agreement, and a guard that the two engines are genuinely different implementations rather than one stub |
 | `test/browser-fallback.test.mjs` | 8 | the jsdom + fake-indexeddb path |
-| `test/queue.test.js` | 4 | Dexie mutation-queue lifecycle |
+| `test/queue.test.js` | 5 | Dexie mutation-queue lifecycle and nested clock observation |
+| `test/rebase.test.js` | 18 | optimistic rebase plus protocol identity, envelopes, acknowledgement, and checkpoints |
+| `test/clock.test.js` | 13 | HLC ordering, persistence, skew bounds, and multi-instance identity |
 | `test/bundle.test.mjs` | 4 | the browser bundle builds for `platform=browser`, references no Node builtins, does not pull in the native addon, stays within a size budget |
 | `test/browser-e2e.test.mjs` | 3 | see below |
-| `test/helpers/*.mjs` | 2 | **not real tests** — `node --test` treats every `.mjs` under `test/` as a test file, so the two helper modules each register as one trivially-passing "test". 41 real tests + 2 helpers = the 43 reported. |
+| `test/helpers/*.mjs` | 2 | **not real tests** — `node --test` treats each helper module as one trivially-passing test. 74 real tests + 2 helpers = the 76 reported. |
 
 ### What `browser-e2e.test.mjs` actually drives
 
@@ -551,7 +555,7 @@ cp .env.example .env        # compose hard-fails on a missing env_file
 | `sagitta` | 3005 | Sagitta SSR + `dart:ffi` | in-memory | `sagitta` |
 
 All five apply the same policy: `MERGE_BY_KEY` on `id`, `resolveByTimestamp`,
-LWW `updatedAt,syncedAt`, FWW `createdAt`. The node server runs with
+LWW `updatedAt,syncedAt`, and no default FWW key. The node server runs with
 `SYNCER_REQUIRE_NATIVE=1` and **refuses to start without the native C addon** — a
 JS fallback merge would let the entire suite pass without ever exercising the
 core.
@@ -561,7 +565,7 @@ core.
 | Suite | Profile / invocation | What it proves |
 |---|---|---|
 | `test/run_e2e.sh` | `docker compose --profile test up --build` | Smoke: node server health, seed docs, deep merge of nested objects. `curl` + `grep`. |
-| `test/run_e2e_full.sh` | `docker compose --profile fulltest --profile fullstack --profile dart --profile sagitta up --build` | The same `test_server` function applied to node, rust-fullstack, dart and sagitta: 11 checks each covering health, deep merge persistence, stale-write handling, and **element-level** keyed-array behaviour — untouched element kept, fresher element applied, new element appended, stale element rejected, `createdAt` re-creation refused. Rejection is asserted with `check_absent`, since absence is the only proof. |
+| `test/run_e2e_full.sh` | `docker compose --profile fulltest --profile fullstack --profile dart --profile sagitta up --build` | The same `test_server` function applied to node, rust-fullstack, dart and sagitta: deep merge persistence, stale-write handling, and **element-level** keyed-array behaviour — untouched element kept, fresher element applied, new element appended, stale element rejected, later `createdAt` accepted by default, and explicit FWW veto verified where the server supports per-request options. |
 | `test/conformance/` | `docker compose --profile conformance up --exit-code-from conformance` | **12 scenario groups, 92 cases** against the Postgres-backed node server: health, deep merge, keyed arrays, jsonb fidelity, idempotency, convergence, concurrency, batch, tombstones, identity, the strategy matrix, robustness. This is the only layer that round-trips every merge through real `jsonb`, so it proves the core's output survives key reordering, numeric normalization and unicode. Iterable from the host with `BASE_URL=http://localhost:3003 node test/conformance/run.mjs`, and filterable by group number (`node run.mjs 3 6 7`). |
 | `test/cross-server/` | `docker compose --profile crossserver --profile fullstack --profile dart --profile sagitta up --exit-code-from cross-server` | Four runtimes (Node/N-API+jsonb, Rust/static-link, two Dart/FFI) produce **semantically identical** documents from one mutation sequence, after different HTTP stacks and different JSON serializers. Phase 1 asserts eleven per-server properties against a reference server; phase 1b probes int64 precision per runtime (`int64Exact: false` for node, `true` for rust/dart) so the 2^53 limit is asserted rather than hidden; phase 2 applies three non-contending mutations in every permutation and requires convergence. Host mode: `HOST_MODE=1 node test/cross-server/run.mjs`. |
 | `test/clients/` | `test/clients/run_all.sh` (from the host, against a live server) | The **published** client libraries from `../opto-sync-clients` (ts/dart/rust) against a live server over HTTP, every document round-tripping through `jsonb`. Seven scenarios implemented in all three languages: default policy (scenario 0), offline queue → flush → merge (1a individual, 1b batched), optimistic write → pull-back reconcile, stale-write rejection in both directions, keyed-array reconciliation, replay idempotency, failure marking, and scenario 7 — cross-client convergence, where all three clients queue different payloads against one document flushed `ts → dart → rust` and then each independently verifies the final state. |
@@ -576,9 +580,9 @@ is what CI sets.
 Individual `test/clients` suites, if you prefer:
 
 ```sh
-(cd test/clients/ts   && node --test)                                # 8 tests
-(cd test/clients/dart && dart test)                                  # 8 tests
-(cd test/clients/rust && cargo test --offline --test scenarios)       # 8 tests
+(cd test/clients/ts   && node --test)                                # 9 tests
+(cd test/clients/dart && dart test)                                  # 9 tests
+(cd test/clients/rust && cargo test --offline --test scenarios)       # 9 tests
 ```
 
 ### rust-mash is opt-in for a reason
@@ -634,7 +638,7 @@ limits/pooler/TLS, and the Supabase client libraries. See
 | **In-memory e2e servers accumulate state** | `rust-fullstack`, `dart` and `sagitta` have no `/reset`, so a fixed document key makes a suite compare a fresh server against one carrying keys from an earlier run — a spurious "runtimes disagree" failure. | **Namespace per run.** `cross-server` uses `NS_SUFFIX ?? "p<pid>"`; `test/clients` uses `cl-<lang>-<scenario>`; the Supabase suite uses `sb-<pid>-<time>` and deletes only that prefix. |
 | **`POST /reset` and `docker compose down`** | `/reset` `TRUNCATE`s tables and `down -v` destroys a database other suites are using concurrently. | Create fresh documents with `PUT /doc/:id` instead. Tear down individual services with `stop`. |
 | **Skips that look like passes** | The GORM plugin skips without Postgres; `test/clients` skips without a server; `browser-e2e` skips without Chromium. | Read the output for skips, or set `OPTO_SYNC_REQUIRE_SERVER=1`. `browser-e2e` logs an explicit line either way. |
-| **`node --test` in a `test/` directory** | It treats every `.mjs`/`.js` under `test/` as a test file, so helper modules register as trivially-passing tests (2 of the 43 in `clients/ts`). | Do not read the total as a count of assertions; check per-file counts. |
+| **`node --test` in a `test/` directory** | It treats every `.mjs`/`.js` under `test/` as a test file, so helper modules register as trivially-passing tests (2 of the 76 in `clients/ts`). | Do not read the total as a count of assertions; check per-file counts. |
 | **Absence is the only proof of rejection** | "The stale write lost" cannot be shown by asserting what *is* present. | Use a negative assertion: `assert(strstr(r, "stale-a") == NULL)` in C, `check_absent` in the shell suites. |
 | **Unseeded randomness** | A generator using `Math.random()` or `Date.now()` produces failures nobody can reproduce. | Seeded PRNGs only: xorshift in `prop_test.c`, mulberry32 in `gen_corpus.js`, deterministic output in `gen_corpus.py`. |
 

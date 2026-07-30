@@ -272,6 +272,7 @@ lines.push('{"base":{"items":[]},"incoming":{"items":[{"id":1,"updatedAt":168994
 lines.push('{"base":{"items":[{"id":"7","updatedAt":"1689940800123","v":"a"}]},"incoming":{"items":[{"id":7,"updatedAt":"1689940800124","v":"b"}]}}');
 lines.push('{"base":{"a":null,"b":{"c":[]}},"incoming":{"a":{"x":1},"b":{"c":[null,0,""]}}}');
 lines.push('{"base":{"items":[{"id":1,"createdAt":1689940800123456789,"v":"first"}]},"incoming":{"items":[{"id":1,"createdAt":9223372036854775807,"v":"later"}]}}');
+lines.push('{"base":{"items":[{"id":"nested-ts","_sync":{"updatedAt":"0000000000200"},"v":"base"}]},"incoming":{"items":[{"id":"nested-ts","_sync":{"updatedAt":"0000000000100"},"v":"stale"}]}}');
 
 const out = lines.join("\n") + "\n";
 const target = path.join(__dirname, "corpus.jsonl");

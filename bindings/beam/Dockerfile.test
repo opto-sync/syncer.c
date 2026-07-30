@@ -14,8 +14,10 @@ FROM rust:1.97-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
+        curl \
         elixir \
         erlang-dev \
+        erlang-eunit \
         git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,5 +25,24 @@ ENV MIX_HOME=/opt/mix \
     HEX_HOME=/opt/hex
 
 RUN mix local.hex --force && mix local.rebar --force
+
+# Compile and exercise the dedicated Gleam wrapper against this NIF too. Keep
+# the compiler and checksum pinned so a language release cannot silently
+# change CI output. Official releases are musl-static and work in this Debian
+# image on both GitHub's amd64 runners and arm64 developer machines.
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) gleam_arch=x86_64 ;; \
+      arm64) gleam_arch=aarch64 ;; \
+      *) echo "unsupported Gleam architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && gleam_asset="gleam-v1.16.0-${gleam_arch}-unknown-linux-musl.tar.gz" \
+    && gleam_url="https://github.com/gleam-lang/gleam/releases/download/v1.16.0/${gleam_asset}" \
+    && curl -fsSLO "$gleam_url" \
+    && curl -fsSLO "${gleam_url}.sha256" \
+    && sha256sum -c "${gleam_asset}.sha256" \
+    && tar -xzf "$gleam_asset" -C /usr/local/bin gleam \
+    && rm "$gleam_asset" "${gleam_asset}.sha256" \
+    && gleam --version
 
 WORKDIR /src/bindings/beam

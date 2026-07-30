@@ -111,7 +111,11 @@ pub fn try_merge_json_with_options(
 
     let c_opts = SyncerMergeOptionsC {
         override_cb: None,
-        array_strategy: opts.array_strategy.as_ref().copied().unwrap_or(ArrayMergeStrategy::Replace),
+        array_strategy: opts
+            .array_strategy
+            .as_ref()
+            .copied()
+            .unwrap_or(ArrayMergeStrategy::Replace),
         max_depth: opts.max_depth.unwrap_or(0),
         detect_circular_refs: opts.detect_circular_refs,
         resolve_by_timestamp: opts.resolve_by_timestamp,
@@ -151,7 +155,7 @@ mod tests {
         let j1 = r#"{"a": 1, "b": {"c": 2}}"#;
         let j2 = r#"{"b": {"d": 3}, "e": 4}"#;
         let res = merge_json(j1, j2);
-        
+
         assert!(res.contains("\"a\":1"));
         assert!(res.contains("\"c\":2"));
         assert!(res.contains("\"d\":3"));
@@ -162,8 +166,10 @@ mod tests {
     fn test_crdt() {
         let j1 = r#"{"doc": {"updatedAt": 100, "v": 1}}"#;
         let j2 = r#"{"doc": {"updatedAt": 50, "v": 2}}"#;
-        let mut opts = MergeOptions::default();
-        opts.resolve_by_timestamp = true;
+        let opts = MergeOptions {
+            resolve_by_timestamp: true,
+            ..MergeOptions::default()
+        };
 
         let res = merge_json_with_options(j1, j2, &opts);
         assert!(res.contains("\"v\":1")); // Kept v1 because 100 > 50
@@ -218,9 +224,15 @@ mod tests {
         let res = try_merge_json_with_options(j1, j2, &opts).unwrap();
         assert!(res.contains(r#""id":1"#), "existing-only kept: {res}");
         assert!(res.contains(r#""name":"b2""#), "matched pair merged: {res}");
-        assert!(res.contains(r#""tag":"keep""#), "merged, not replaced: {res}");
+        assert!(
+            res.contains(r#""tag":"keep""#),
+            "merged, not replaced: {res}"
+        );
         assert!(!res.contains(r#""name":"b""#) || res.contains(r#""name":"b2""#));
-        assert!(res.contains(r#""id":3"#), "unmatched incoming appended: {res}");
+        assert!(
+            res.contains(r#""id":3"#),
+            "unmatched incoming appended: {res}"
+        );
         // id:2 must not appear twice
         assert_eq!(res.matches(r#""id":2"#).count(), 1, "{res}");
     }
@@ -234,7 +246,10 @@ mod tests {
         opts.resolve_by_timestamp = false;
         let res = try_merge_json_with_options(j1, j2, &opts).unwrap();
         assert_eq!(res.matches("42").count(), 1, "42/\"42\" must match: {res}");
-        assert!(res.contains(r#""v":"base""#) && res.contains(r#""w":"inc""#), "{res}");
+        assert!(
+            res.contains(r#""v":"base""#) && res.contains(r#""w":"inc""#),
+            "{res}"
+        );
     }
 
     #[test]
@@ -258,12 +273,20 @@ mod tests {
         // Arrays deliberately reordered: matching is by id, not index.
         // id:1 incoming is stale (updatedAt 50 < 100) -> rejected.
         // id:2 incoming is fresh (updatedAt 300 > 200) -> merged.
-        let j1 = r#"{"items":[{"id":1,"updatedAt":100,"v":"keep"},{"id":2,"updatedAt":200,"v":"old"}]}"#;
-        let j2 = r#"{"items":[{"id":2,"updatedAt":300,"v":"new"},{"id":1,"updatedAt":50,"v":"stale"}]}"#;
+        let j1 =
+            r#"{"items":[{"id":1,"updatedAt":100,"v":"keep"},{"id":2,"updatedAt":200,"v":"old"}]}"#;
+        let j2 =
+            r#"{"items":[{"id":2,"updatedAt":300,"v":"new"},{"id":1,"updatedAt":50,"v":"stale"}]}"#;
         let res = try_merge_json_with_options(j1, j2, &merge_by_key_opts()).unwrap();
-        assert!(res.contains(r#""v":"keep""#), "stale incoming must lose: {res}");
+        assert!(
+            res.contains(r#""v":"keep""#),
+            "stale incoming must lose: {res}"
+        );
         assert!(!res.contains("stale"), "{res}");
-        assert!(res.contains(r#""v":"new""#), "fresh incoming must win: {res}");
+        assert!(
+            res.contains(r#""v":"new""#),
+            "fresh incoming must win: {res}"
+        );
         assert!(!res.contains(r#""v":"old""#), "{res}");
     }
 
@@ -295,9 +318,11 @@ mod tests {
         // Regression: strcmp would rank "9" above "10" and adopt the stale write.
         let j1 = r#"{"updatedAt":"10","val":"base"}"#;
         let j2 = r#"{"updatedAt":"9","val":"stale"}"#;
-        let mut opts = MergeOptions::default();
-        opts.resolve_by_timestamp = true;
-        opts.lww_keys = Some("updatedAt".to_string());
+        let opts = MergeOptions {
+            resolve_by_timestamp: true,
+            lww_keys: Some("updatedAt".to_string()),
+            ..MergeOptions::default()
+        };
         let res = merge_json_with_options(j1, j2, &opts);
         assert!(
             res.contains("\"val\":\"base\""),

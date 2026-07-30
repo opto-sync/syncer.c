@@ -1,0 +1,4 @@
+comment = 'Deterministic JSONB reconciliation through the opto-sync C engine'
+default_version = '0.2.1'
+module_pathname = '$libdir/opto_sync'
+relocatable = true

@@ -233,6 +233,24 @@ jobs:
           - name: go-gorm
             go: true
             dir: plugins/go/gorm
+          - name: go-ent
+            go: true
+            dir: plugins/go/ent
+          - name: go-bun
+            go: true
+            dir: plugins/go/bun
+          - name: dart-drift
+            dart: true
+            core_shared_lib: true
+            dir: plugins/dart/drift
+          - name: dart-floor
+            dart: true
+            core_shared_lib: true
+            dir: plugins/dart/floor
+          - name: dart-isar
+            dart: true
+            core_shared_lib: true
+            dir: plugins/dart/isar
     steps:
       - uses: actions/checkout@v4
 
@@ -248,6 +266,11 @@ jobs:
           # See the bindings job: the gorm plugin transitively cgo-compiles the
           # core C sources through its replace directive on ../../../bindings/go.
           cache: false
+
+      - uses: dart-lang/setup-dart@v1
+        if: matrix.dart
+        with:
+          sdk: stable
 
       - name: Cache cargo registry (downloads only, never target/)
         if: matrix.rust
@@ -265,12 +288,28 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: cargo test
 
+      - name: Build core shared library for Dart FFI
+        if: matrix.core_shared_lib
+        run: |
+          cmake -S core -B core/build
+          cmake --build core/build --target syncer
+
       # plugins/typescript DOES have a package.json (@opto-sync/orm-plugins)
       # with the real ORM packages as devDependencies, so install first.
+      - name: plugins/typescript — build native reconciliation addon
+        if: matrix.name == 'typescript'
+        working-directory: bindings/typescript
+        run: npm ci
+
       - name: plugins/typescript — install
         if: matrix.name == 'typescript'
         working-directory: plugins/typescript
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: plugins/typescript — generate isolated Prisma test client
+        if: matrix.name == 'typescript'
+        working-directory: plugins/typescript
+        run: npm run prisma:generate
 
       # Two configs, both load-bearing:
       #   tsconfig.json      checks against types/orm-stubs.d.ts (no ORM install)
@@ -297,17 +336,87 @@ jobs:
           OPTO_SYNC_TEST_PG: postgres://test:test@localhost:5432/plugintest
         run: npm test
 
-      - name: plugins/go/gorm — go build && go vet
-        if: matrix.name == 'go-gorm'
-        working-directory: plugins/go/gorm
+      - name: plugins/go — build, vet, and race-test
+        if: matrix.go
+        working-directory: ${{ matrix.dir }}
         run: |
           go build ./...
           go vet ./...
+          go test -race -count=1 ./...
+
+      - name: plugins/dart — analyze and test against the native core
+        if: matrix.dart
+        working-directory: ${{ matrix.dir }}
+        env:
+          SYNCER_LIB_PATH: ${{ github.workspace }}/core/build/libsyncer.so
+        run: |
+          dart pub get
+          dart analyze
+          dart test
 
       - name: Which suite broke
         if: failure()
         run: |
           echo "::error title=syncer.c plugins/${{ matrix.name }} FAILED::The ${{ matrix.name }} ORM plugin suite broke (${{ matrix.dir }}), not the core or the bindings."
+
+  # ---------------------------------------------------------------------------
+  # SQL interfaces — the C engine loaded directly inside SQLite and PostgreSQL,
+  # including the generic PostgreSQL BEFORE UPDATE trigger.
+  # ---------------------------------------------------------------------------
+  sql:
+    name: SQL interfaces (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SQLite development tools
+        if: matrix.engine == 'sqlite'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sqlite3 libsqlite3-dev
+
+      # ubuntu-latest also enables PGDG. Installing Ubuntu's
+      # postgresql-server-dev-all beside PGDG's newer postgresql-common makes
+      # apt select mutually incompatible exact versions. Pin one supported
+      # server major instead; the PGDG and Ubuntu packages both provide it.
+      - name: Install PostgreSQL 16 development tools
+        if: matrix.engine == 'postgres'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            postgresql-16 postgresql-client-16 postgresql-server-dev-16
+
+      - name: Strict-compile and test shared SQL option parser
+        run: |
+          cc -std=c99 -Wall -Wextra -Wpedantic -Werror \
+            -Ibindings/sql/common -Icore/include -Icore/src \
+            bindings/sql/common/test_options.c \
+            bindings/sql/common/options.c core/src/syncer.c core/src/yyjson.c \
+            -o /tmp/opto-sync-options-test
+          /tmp/opto-sync-options-test
+
+      - name: SQLite loadable extension
+        if: matrix.engine == 'sqlite'
+        working-directory: bindings/sql/sqlite
+        run: make clean test
+
+      - name: PostgreSQL extension and trigger
+        if: matrix.engine == 'postgres'
+        working-directory: bindings/sql/postgres
+        # PGDG's PGXS enables optional LLVM bitcode but does not depend on the
+        # versioned clang binary it configured (currently clang-19). The shared
+        # extension and live trigger test do not require install-time bitcode.
+        run: make clean test-local with_llvm=no
+
+      - name: Which suite broke
+        if: failure()
+        run: |
+          echo "::error title=syncer.c SQL ${{ matrix.engine }} FAILED::The database-loaded C interface or its trigger contract failed."
 
   # ---------------------------------------------------------------------------
   # test-differential/ — the strongest claim in the repo: C, TypeScript, Dart,
@@ -325,11 +434,11 @@ jobs:
   # and no node_modules cache. Do not "optimize" that away.
   # ---------------------------------------------------------------------------
   # ---------------------------------------------------------------------------
-  # bindings/beam — Rustler NIF over syncer-rs. Needs both Elixir and Rust, so
-  # it uses the elixir container plus rustup rather than the matrix above.
+  # bindings/beam + bindings/gleam — Rustler NIF over syncer-rs, with both the
+  # Elixir API and the dedicated Gleam API exercised against the real NIF.
   # ---------------------------------------------------------------------------
   beam:
-    name: bindings/beam (elixir NIF)
+    name: bindings/beam (Elixir + Gleam NIF)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
@@ -342,6 +451,14 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      - name: Install pinned Gleam compiler
+        run: |
+          curl -fsSLO https://github.com/gleam-lang/gleam/releases/download/v1.16.0/gleam-v1.16.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSLO https://github.com/gleam-lang/gleam/releases/download/v1.16.0/gleam-v1.16.0-x86_64-unknown-linux-musl.tar.gz.sha256
+          sha256sum -c gleam-v1.16.0-x86_64-unknown-linux-musl.tar.gz.sha256
+          tar -xzf gleam-v1.16.0-x86_64-unknown-linux-musl.tar.gz -C /usr/local/bin gleam
+          gleam --version
+
       - name: bindings/beam — mix test
         working-directory: bindings/beam
         run: |
@@ -350,15 +467,33 @@ jobs:
           mix deps.get
           mix test
 
+      - name: bindings/gleam — test against the compiled NIF
+        working-directory: bindings/gleam
+        run: |
+          gleam deps download
+          gleam format --check src test
+          OPTO_SYNC_BEAM_EBIN=../beam/_build/test/lib/opto_sync_nif/ebin \
+          OPTO_SYNC_ELIXIR_EBIN="$(
+            elixir -e 'IO.puts(Path.join(:code.lib_dir(:elixir), "ebin"))'
+          )" \
+          gleam test
+
       - name: plugins/beam/ecto — mix test (hermetic, no DB)
         working-directory: plugins/beam/ecto
         run: |
           mix deps.get
           mix test
 
+      - name: plugins/beam/ash — mix test
+        working-directory: plugins/beam/ash
+        run: |
+          mix deps.get
+          mix format --check-formatted
+          mix test
+
       - name: Which suite failed
         if: failure()
-        run: echo "::error title=beam::bindings/beam or plugins/beam/ecto failed"
+        run: echo "::error title=beam::Elixir/Gleam binding or Ecto/Ash plugin failed"
 
   differential:
     name: test-differential (C/TS/Dart/Rust/Go byte-identity)

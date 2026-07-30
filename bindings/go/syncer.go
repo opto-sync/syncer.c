@@ -21,6 +21,8 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -57,11 +59,11 @@ type Options struct {
 	// ResolveByTimestamp enables CRDT-like timestamp conflict resolution
 	// using LwwKeys / FwwKeys.
 	ResolveByTimestamp bool
-	// LwwKeys is a comma-separated list of Last-Write-Wins timestamp keys,
-	// e.g. "updatedAt,syncedAt". Empty string means "unset", which the core reads as its default ("updatedAt" for LWW, "id" for match keys) — not "no keys".
+	// LwwKeys is a comma-separated list of Last-Write-Wins timestamp keys.
+	// Empty means "unset", which preserves the core default ("updatedAt").
 	LwwKeys string
-	// FwwKeys is a comma-separated list of First-Write-Wins timestamp keys,
-	// e.g. "createdAt". Empty string means "unset", which the core reads as its default ("updatedAt" for LWW, "id" for match keys) — not "no keys".
+	// FwwKeys is a comma-separated list of First-Write-Wins timestamp keys.
+	// Empty means unset (no First-Write-Wins selector).
 	FwwKeys string
 	// ArrayMatchKeys is a comma-separated list of identity keys for
 	// ArrayMergeByKey, e.g. "uuid,id". The first listed key present in an
@@ -73,6 +75,10 @@ type Options struct {
 // which happens when either input is not valid JSON (or on internal
 // allocation failure).
 var ErrMergeFailed = errors.New("syncer: merge failed (invalid JSON input or out of memory)")
+
+// ErrInvalidOptions is returned before crossing cgo when an option cannot be
+// represented by the C contract.
+var ErrInvalidOptions = errors.New("syncer: invalid options")
 
 // Version returns the C core library version as "major.minor.patch".
 func Version() string {
@@ -88,6 +94,22 @@ func MergeJSON(base, incoming string) (string, error) {
 // MergeJSONWithOptions deep-merges incoming on top of base with full
 // control over array strategy and timestamp resolution.
 func MergeJSONWithOptions(base, incoming string, opts Options) (string, error) {
+	if opts.ArrayStrategy < ArrayReplace || opts.ArrayStrategy > ArrayMergeByKey {
+		return "", fmt.Errorf("%w: array strategy must be between %d and %d, got %d",
+			ErrInvalidOptions, ArrayReplace, ArrayMergeByKey, opts.ArrayStrategy)
+	}
+	if strings.IndexByte(base, 0) >= 0 || strings.IndexByte(incoming, 0) >= 0 {
+		return "", ErrMergeFailed
+	}
+	for name, value := range map[string]string{
+		"LwwKeys": opts.LwwKeys, "FwwKeys": opts.FwwKeys,
+		"ArrayMatchKeys": opts.ArrayMatchKeys,
+	} {
+		if strings.IndexByte(value, 0) >= 0 {
+			return "", fmt.Errorf("%w: %s may not contain a NUL byte",
+				ErrInvalidOptions, name)
+		}
+	}
 	cBase := C.CString(base)
 	defer C.free(unsafe.Pointer(cBase))
 	cIncoming := C.CString(incoming)

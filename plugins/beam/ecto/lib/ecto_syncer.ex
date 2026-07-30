@@ -116,8 +116,8 @@ defmodule OptoSyncEcto do
 
   @doc """
   The project-wide CRDT reconciliation policy — `:merge_by_key` on `"id"`,
-  timestamp resolution on, `updatedAt`/`syncedAt` Last-Write-Wins and
-  `createdAt` First-Write-Wins.
+  timestamp resolution on, `updatedAt`/`syncedAt` Last-Write-Wins, and no
+  First-Write-Wins selector. FWW remains available as an explicit opt-in.
 
   Delegates to `Syncer.crdt_options/1`; `overrides` are applied on top.
   """

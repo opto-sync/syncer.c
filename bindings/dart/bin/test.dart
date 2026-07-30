@@ -15,7 +15,8 @@ void check(bool cond, String name) {
   }
 }
 
-Pointer<Utf8> dartOverrideCb(Pointer<Utf8> pathPtr, Pointer<Utf8> v1Ptr, Pointer<Utf8> v2Ptr) {
+Pointer<Utf8> dartOverrideCb(
+    Pointer<Utf8> pathPtr, Pointer<Utf8> v1Ptr, Pointer<Utf8> v2Ptr) {
   // The native engine passes the FULL JSON path (e.g. r'$.override_me'),
   // never the bare key — matching on 'override_me' alone never fires.
   final path = pathPtr.toDartString();
@@ -28,7 +29,8 @@ Pointer<Utf8> dartOverrideCb(Pointer<Utf8> pathPtr, Pointer<Utf8> v1Ptr, Pointer
 }
 
 /// Find the array element (as a map) whose [key] normalizes to [id].
-Map<String, dynamic>? byId(List<dynamic> items, Object id, {String key = 'id'}) {
+Map<String, dynamic>? byId(List<dynamic> items, Object id,
+    {String key = 'id'}) {
   for (final e in items) {
     if (e is Map<String, dynamic> && '${e[key]}' == '$id') return e;
   }
@@ -52,9 +54,11 @@ void main() {
   final j2 = '{"b": {"d": 3}, "e": 4, "override_me": "yes"}';
   final cb = Pointer.fromFunction<MergeOverrideCbC>(dartOverrideCb);
   final res = syncer.merge(j1, j2, options: MergeOptions(overrideCb: cb));
-  check(res.contains('"custom":"merged from Dart!"'), 'override fires on full path');
+  check(res.contains('"custom":"merged from Dart!"'),
+      'override fires on full path');
   check(res.contains('"a":1'), 'base-only sibling preserved');
-  check(res.contains('"c":2') && res.contains('"d":3'), 'nested objects deep-merge');
+  check(res.contains('"c":2') && res.contains('"d":3'),
+      'nested objects deep-merge');
   check(res.contains('"e":4'), 'incoming-only key copied');
 
   // CRDT: numeric-string timestamps compare by magnitude, not strcmp.
@@ -63,7 +67,8 @@ void main() {
     '{"updatedAt":"9","val":"stale"}',
     options: MergeOptions(resolveByTimestamp: true, lwwKeys: 'updatedAt'),
   );
-  check(crdt.contains('"val":"base"'), 'CRDT rejects the older numeric-string stamp');
+  check(crdt.contains('"val":"base"'),
+      'CRDT rejects the older numeric-string stamp');
 
   // Invalid JSON surfaces as an empty result (NULL from the core).
   final bad = syncer.merge('{oops', '{}');
@@ -76,6 +81,21 @@ void main() {
       'tryMerge returns null on invalid incoming JSON');
   check(syncer.tryMerge('{"x":1}', '{"y":2}') != null,
       'tryMerge returns a result on valid JSON');
+  check(syncer.tryMerge('{}\u0000{"smuggled":true}', '{}') == null,
+      'tryMerge rejects an embedded NUL instead of truncating');
+  try {
+    syncer.tryMerge('{}', '{}', options: MergeOptions(maxDepth: -1));
+    check(false, 'negative maxDepth throws');
+  } on RangeError {
+    check(true, 'negative maxDepth throws');
+  }
+  try {
+    syncer.tryMerge('{}', '{}',
+        options: MergeOptions(lwwKeys: 'updatedAt\u0000ignored'));
+    check(false, 'NUL in an option throws');
+  } on ArgumentError {
+    check(true, 'NUL in an option throws');
+  }
 
   // --- mergeByKey: matched pair deep-merge + append + keep -----------------
   {
@@ -86,14 +106,16 @@ void main() {
     );
     check(out != null, 'mergeByKey produces a result');
     final items = (jsonDecode(out!) as Map<String, dynamic>)['items'] as List;
-    check(items.length == 3, 'mergeByKey yields 3 elements (got ${items.length})');
+    check(items.length == 3,
+        'mergeByKey yields 3 elements (got ${items.length})');
     final e1 = byId(items, 1);
     check(e1 != null && e1['name'] == 'one' && e1['qty'] == 5,
         'matched pair deep-merges (name kept, qty updated)');
     final e2 = byId(items, 2);
     check(e2 != null && e2['name'] == 'two', 'base-only element kept');
     final e3 = byId(items, 3);
-    check(e3 != null && e3['name'] == 'three', 'unmatched incoming element appended');
+    check(e3 != null && e3['name'] == 'three',
+        'unmatched incoming element appended');
   }
 
   // --- arrayMatchKeys "uuid,id" -------------------------------------------
@@ -132,7 +154,8 @@ void main() {
     );
     check(out != null, 'per-element LWW merge produces a result');
     final items = (jsonDecode(out!) as Map<String, dynamic>)['items'] as List;
-    check(items.length == 2, 'reordered arrays still pair up (got ${items.length})');
+    check(items.length == 2,
+        'reordered arrays still pair up (got ${items.length})');
     final e1 = byId(items, 1);
     check(e1 != null && e1['val'] == 'base1',
         'stale incoming element loses per-element LWW despite reorder');
@@ -152,7 +175,8 @@ void main() {
     final obj = jsonDecode(out!) as Map<String, dynamic>;
     check(obj['owner'] == 'original',
         'createdAt FWW: earlier write wins, impostor rejected');
-    check('${obj['createdAt']}' == '100', 'createdAt FWW keeps the earlier stamp');
+    check('${obj['createdAt']}' == '100',
+        'createdAt FWW keeps the earlier stamp');
   }
 
   // --- id int-vs-string normalization --------------------------------------

@@ -27,7 +27,6 @@ type SyncerPlugin struct {
 	//		ArrayStrategy:      syncer.ArrayMergeByKey,
 	//		ResolveByTimestamp: true,
 	//		LwwKeys:            "updatedAt,syncedAt",
-	//		FwwKeys:            "createdAt",
 	//	}
 	Options syncer.Options
 

@@ -18,7 +18,7 @@ const PREFIX = '{"base":';
 const OPTS = {
   arrayStrategy: syncer.ArrayStrategy.MERGE_BY_KEY, // 4
   resolveByTimestamp: true,
-  lwwKeys: "updatedAt,syncedAt",
+  lwwKeys: "updatedAt,syncedAt,#/_sync/updatedAt",
   fwwKeys: "createdAt",
   arrayMatchKeys: "id",
   maxDepth: 0,

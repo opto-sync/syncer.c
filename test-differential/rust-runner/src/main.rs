@@ -25,7 +25,7 @@ fn main() {
         max_depth: Some(0),
         detect_circular_refs: false,
         resolve_by_timestamp: true,
-        lww_keys: Some("updatedAt,syncedAt".to_string()),
+        lww_keys: Some("updatedAt,syncedAt,#/_sync/updatedAt".to_string()),
         fww_keys: Some("createdAt".to_string()),
         array_match_keys: Some("id".to_string()),
     };
