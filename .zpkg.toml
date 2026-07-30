@@ -30,7 +30,13 @@ exclude = [
   "test-differential/corpus*.jsonl",
   "test-differential/results*.jsonl",
 ]
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\" && test -f \"$ZED_PKG_TEST_TARGET/LICENSE\""
+# Every packed target ships a LICENSE; the second clause recognizes each
+# target's own marker (repository manifest, C header, or wasm package.json)
+# so sliced targets pass without carrying the repository manifest.
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/LICENSE\" && { test -f \"$ZED_PKG_TEST_TARGET/.zpkg.toml\" || test -f \"$ZED_PKG_TEST_TARGET/include/syncer.h\" || test -f \"$ZED_PKG_TEST_TARGET/package.json\"; }"
+
+[scripts]
+test = "cd core && make && make sanitize"
 
 # The repository target is the canonical package for native bindings today.
 # Those bindings intentionally compile the shared C core from paths above their

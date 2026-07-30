@@ -12,6 +12,8 @@ on:
       - 'scripts/check-release-version.py'
       - 'scripts/zpkg-smoke.sh'
       - 'scripts/zpkg-wasm-smoke.mjs'
+      - 'docs/ZED_PACKAGE.md'
+      - 'docs/SUBMODULE_CONSUMERS.md'
       - '.github/workflows/zed-package.yml'
   push:
     branches: [main]
@@ -25,6 +27,8 @@ on:
       - 'scripts/check-release-version.py'
       - 'scripts/zpkg-smoke.sh'
       - 'scripts/zpkg-wasm-smoke.mjs'
+      - 'docs/ZED_PACKAGE.md'
+      - 'docs/SUBMODULE_CONSUMERS.md'
       - '.github/workflows/zed-package.yml'
   workflow_dispatch:
 
@@ -42,11 +46,11 @@ env:
   ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
 
 jobs:
-  pack:
+  package-roundtrip:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout package
+      - name: Checkout syncer.c
         uses: actions/checkout@v4
         with:
           path: package
@@ -152,7 +156,44 @@ jobs:
           ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
         run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
 
-      - name: Upload deterministic package artifacts
+          echo "ZPKG_FIRST=$first" >> "$GITHUB_ENV"
+
+      - name: Compile clean consumers from the packed C artifacts
+        run: |
+          set -euo pipefail
+          tested=0
+          for archive in "$ZPKG_FIRST"/*.tar.gz; do
+            case "$(basename "$archive")" in
+              *syncer-wasm*) continue ;;
+            esac
+            extract=$(mktemp -d "$RUNNER_TEMP/zpkg-extract.XXXXXX")
+            tar -xzf "$archive" -C "$extract"
+            sh package/scripts/zpkg-smoke.sh "$extract"
+            rm -rf "$extract"
+            tested=$((tested + 1))
+          done
+          test "$tested" -eq 2
+
+      - name: Verify the packed WebAssembly distribution
+        run: |
+          set -euo pipefail
+          wasm_archive=$(find "$ZPKG_FIRST" -maxdepth 1 -type f -name '*syncer-wasm*.tar.gz' -print -quit)
+          test -n "$wasm_archive"
+          extract=$(mktemp -d "$RUNNER_TEMP/zpkg-wasm.XXXXXX")
+          tar -xzf "$wasm_archive" -C "$extract"
+          test -n "$(find "$extract" -type f -name package.json -print -quit)"
+          test -n "$(find "$extract" -type f -name index.mjs -print -quit)"
+          test -n "$(find "$extract" -type f -name index.d.ts -print -quit)"
+          rm -rf "$extract"
+
+      - name: Run a clean Zed registry/install roundtrip
+        working-directory: package
+        env:
+          ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+          ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
+        run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
+
+      - name: Upload audited package artifacts
         uses: actions/upload-artifact@v4
         with:
           name: syncer-zed-packages
