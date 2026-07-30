@@ -14,6 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  procedure-contract:
+    name: Procedure manifest and bounded specification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check proof inventory and bounded algebra
+        run: python3 formal/procedure_model.py
+      - name: Check JSON-lines formal adapter
+        run: |
+          printf '%s\n' \
+            '{"op":"compare","left":"009","right":"9"}' \
+            '{"op":"strategy_valid","value":5}' \
+            | python3 formal/procedure_model.py --json-stdin
+
   c-cbmc:
     name: CBMC production C proofs
     runs-on: ubuntu-24.04
