@@ -82,10 +82,14 @@ node run_ts.js                   corpus.jsonl results-ts.jsonl
 dart run run_dart.dart           corpus.jsonl results-dart.jsonl
 ./rust-runner/target/release/run_rust corpus.jsonl results-rust.jsonl
 ./go-runner/run_go               corpus.jsonl results-go.jsonl
+if [ -n "$RUST_NATIVE" ]; then
+  "$RUST_NATIVE"                 corpus.jsonl results-rustnative.jsonl
+fi
 
 node compare.js --corpus corpus.jsonl \
   c=results-c.jsonl ts=results-ts.jsonl dart=results-dart.jsonl \
-  rust=results-rust.jsonl go=results-go.jsonl
+  rust=results-rust.jsonl go=results-go.jsonl \
+  ${RUST_NATIVE:+rustnative=results-rustnative.jsonl}
 
 echo
 echo "== [4/4] pass 2: idempotency (re-merge own output with same incoming) =="
