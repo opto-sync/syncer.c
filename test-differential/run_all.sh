@@ -58,6 +58,19 @@ echo "built run_rust"
 (cd go-runner && go build -a -o run_go .)
 echo "built run_go"
 
+# Rust-NATIVE runner (the standalone reimplementation at ../../../syncer.rs —
+# no C code; must still be byte-identical). Sibling checkout, so optional:
+# absent in a lone syncer.c CI clone, override with SYNCER_RS_DIR.
+RUST_NATIVE_DIR="${SYNCER_RS_DIR:-../../syncer.rs}"
+if [ -f "$RUST_NATIVE_DIR/Cargo.toml" ]; then
+  (cd "$RUST_NATIVE_DIR" && cargo build --release --quiet --example jsonl_runner)
+  RUST_NATIVE="$RUST_NATIVE_DIR/target/release/examples/jsonl_runner"
+  echo "built run_rustnative (standalone syncer.rs)"
+else
+  RUST_NATIVE=""
+  echo "skipping rust-native: $RUST_NATIVE_DIR not found (set SYNCER_RS_DIR)"
+fi
+
 echo
 echo "== [2/4] generate corpus =="
 node gen_corpus.js
@@ -69,14 +82,22 @@ node run_ts.js                   corpus.jsonl results-ts.jsonl
 dart run run_dart.dart           corpus.jsonl results-dart.jsonl
 ./rust-runner/target/release/run_rust corpus.jsonl results-rust.jsonl
 ./go-runner/run_go               corpus.jsonl results-go.jsonl
+if [ -n "$RUST_NATIVE" ]; then
+  "$RUST_NATIVE"                 corpus.jsonl results-rustnative.jsonl
+fi
 
 node compare.js --corpus corpus.jsonl \
   c=results-c.jsonl ts=results-ts.jsonl dart=results-dart.jsonl \
-  rust=results-rust.jsonl go=results-go.jsonl
+  rust=results-rust.jsonl go=results-go.jsonl \
+  ${RUST_NATIVE:+rustnative=results-rustnative.jsonl}
 
 echo
 echo "== [4/4] pass 2: idempotency (re-merge own output with same incoming) =="
-for lang in c ts dart rust go; do
+LANGS="c ts dart rust go"
+if [ -n "$RUST_NATIVE" ]; then
+  LANGS="$LANGS rustnative"
+fi
+for lang in $LANGS; do
   node build_pass2.js corpus.jsonl "results-$lang.jsonl" "corpus2-$lang.jsonl"
 done
 ./run_c                          corpus2-c.jsonl    results2-c.jsonl
@@ -84,16 +105,30 @@ node run_ts.js                   corpus2-ts.jsonl   results2-ts.jsonl
 dart run run_dart.dart           corpus2-dart.jsonl results2-dart.jsonl
 ./rust-runner/target/release/run_rust corpus2-rust.jsonl results2-rust.jsonl
 ./go-runner/run_go               corpus2-go.jsonl   results2-go.jsonl
+if [ -n "$RUST_NATIVE" ]; then
+  "$RUST_NATIVE"                 corpus2-rustnative.jsonl results2-rustnative.jsonl
+fi
 
 # (a) per-language idempotency: results2-<lang> must equal results-<lang>
-for lang in c ts dart rust go; do
+for lang in $LANGS; do
   node compare.js --corpus "corpus2-$lang.jsonl" \
     "pass1-$lang=results-$lang.jsonl" "pass2-$lang=results2-$lang.jsonl"
 done
 # (b) cross-language agreement on pass 2 as well
 node compare.js --corpus corpus2-c.jsonl \
   c=results2-c.jsonl ts=results2-ts.jsonl dart=results2-dart.jsonl \
-  rust=results2-rust.jsonl go=results2-go.jsonl
+  rust=results2-rust.jsonl go=results2-go.jsonl \
+  ${RUST_NATIVE:+rustnative=results2-rustnative.jsonl}
+
+if [ -n "$RUST_NATIVE" ]; then
+  echo
+  echo "== [5/5] pass 3: randomized C vs rust-native fuzz =="
+  # Random documents x random option sets (all 5 strategies, pointer
+  # selectors, max_depth), byte-identical + pass-2 fixed point required.
+  FUZZ_ITERS="${FUZZ_ITERS:-20000}"
+  (cd rustnative-fuzz && cargo build --release --quiet)
+  ./rustnative-fuzz/target/release/rustnative-fuzz "$FUZZ_ITERS"
+fi
 
 echo
 echo "ALL PASSES OK"

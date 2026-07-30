@@ -1,0 +1,14 @@
+[package]
+name = "rustnative-fuzz"
+version = "0.1.0"
+edition = "2021"
+
+# Differential fuzzer: the standalone Rust engine (sibling checkout ../../../syncer.rs)
+# vs this repo's C core, random documents x random option sets, byte-identical
+# output required. Skipped by run_all.sh when the sibling checkout is absent.
+[dependencies]
+syncer-rs = { path = "../../../syncer.rs" }
+
+[[bin]]
+name = "rustnative-fuzz"
+path = "main.rs"

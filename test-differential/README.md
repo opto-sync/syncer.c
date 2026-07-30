@@ -3,6 +3,17 @@
 Proves that every opto-sync language binding (C reference, TypeScript, Dart,
 Rust, Go) produces **byte-identical** merge output from the shared C core.
 
+When a sibling checkout of the **standalone Rust engine** exists at
+`../../syncer.rs` (override with `SYNCER_RS_DIR`), it joins the comparison as
+a sixth implementation (`rustnative`). Unlike the five above it shares no C
+code, so this is a true independent-reimplementation check: same corpus, same
+options, byte-identical output, plus a randomized fuzz pass
+(`rustnative-fuzz/`, `FUZZ_ITERS` random doc/option pairs, default 20000)
+covering all five array strategies, JSON-pointer selectors, and `max_depth`.
+Byte parity requires yyjson-compatible number handling in the Rust engine:
+its serializer mirrors yyjson's double format and it parses floats
+correctly rounded (serde_json `float_roundtrip`).
+
 ## How it works
 
 1. `gen_corpus.js` — seeded PRNG (mulberry32, fixed seed, no `Date.now` /
