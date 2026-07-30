@@ -1,0 +1,67 @@
+schema_version = 1
+procedure_version = 1
+repository = "opto-sync/syncer.c"
+
+[policy]
+claim_classes = ["compiled-harness", "randomized-exploration", "bounded-exhaustive-verification", "implementation-replay", "differential-replay", "unbounded-proof"]
+required_evidence = ["method", "bounds", "assumptions", "source-revision", "tool-versions", "corpus-or-witness-hash"]
+counterexample = "Retain and minimize verifier witnesses, fuzz inputs, and differential fixtures; classify core, binding, contract, or harness defects."
+change_trigger = "Review this inventory with merge semantics, timestamp comparison, ABI, allocation/error, serialization, binding, or oracle changes."
+
+[[machine]]
+id = "timestamp-comparator-and-option-guard"
+risk = "critical"
+status = "active"
+backend = "cbmc+native-tests"
+owner = "syncer-core"
+source_paths = ["core/src/syncer.c"]
+model_paths = ["core/formal/cbmc_timestamp_harness.c", "docs/FORMAL_METHODS.md", "scripts/formal-check.sh"]
+safety = [
+  "numeric timestamp ordering and equality agree with the documented digit-string contract within the symbolic bound",
+  "comparison is antisymmetric",
+  "reachable pointer, bounds, conversion, division, and signedness checks are safe",
+  "invalid C ABI array-strategy discriminants are rejected before JSON parsing",
+]
+liveness = ["the bounded harness terminates for every symbolic input in its declared domain"]
+faults = ["leading zeros", "equal normalized values", "different digit lengths", "invalid discriminant", "boundary-length strings"]
+bounds = ["two-digit symbolic timestamp strings", "all 10000 ordered pairs", "finite strategy discriminant domain"]
+review_triggers = ["timestamp parser", "timestamp comparator", "strategy enum", "options validation", "CBMC harness or unwind setting"]
+
+[[machine]]
+id = "merge-algebra-and-convergence"
+risk = "critical"
+status = "active"
+backend = "property-tests+fuzzing+differential-replay"
+owner = "syncer-semantics"
+source_paths = ["core/src/syncer.c", "core/test/prop_test.c", "test-differential"]
+model_paths = ["core/test/prop_test.c", "core/test/fuzz", "test-differential", "docs/MERGE_SEMANTICS.md"]
+safety = [
+  "successful output is valid JSON",
+  "documented idempotent strategies are idempotent",
+  "corrupt input fails without producing a successful partial document",
+  "supported runtimes produce the documented byte-identical or explicitly classified semantic result",
+  "stale elements cannot overwrite fresher keyed elements under timestamp resolution",
+]
+liveness = ["the iterative merge terminates or reports allocation/input failure for every bounded generated document"]
+faults = ["invalid JSON", "deep nesting", "allocation failure", "duplicate array keys", "timestamp tie", "host integer precision limit"]
+bounds = ["property-test generator limits", "fuzzer resource limits", "tracked differential corpus", "documented depth tests"]
+review_triggers = ["object merge", "array strategy", "timestamp resolution", "path traversal", "allocation failure", "canonical output", "differential fixture"]
+
+[[machine]]
+id = "rust-c-ffi-contract"
+risk = "high"
+status = "active"
+backend = "kani+native-ffi-tests"
+owner = "syncer-bindings"
+source_paths = ["bindings/rust", "core/src/syncer.c"]
+model_paths = ["bindings/rust", "docs/FORMAL_METHODS.md"]
+safety = [
+  "Rust strategy discriminants equal the C ABI values",
+  "interior NUL is rejected before CString construction",
+  "NULL from C is surfaced as failure and never as an empty successful document",
+  "ownership and release paths do not double-free or leak on tested outcomes",
+]
+liveness = ["bounded wrapper operations terminate with a value or explicit error"]
+faults = ["interior NUL", "invalid discriminant", "C returns NULL", "empty document", "binding panic boundary"]
+bounds = ["bounded arbitrary byte arrays", "five strategy values", "native fixture corpus"]
+review_triggers = ["Rust enum", "CString precondition", "extern signature", "ownership/free path", "C options struct"]
