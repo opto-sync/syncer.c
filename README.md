@@ -137,6 +137,11 @@ Deeper layers:
 | `test-differential/` | 306 document pairs merged through C, TypeScript, Dart, Rust and Go must be **byte-identical**, plus a per-language idempotency pass |
 | per-binding suites | each binding's own option surface, plus concurrency (`-race`, threads, worker_threads) |
 
+CBMC also proves bounded properties directly over the production C timestamp
+comparator and invalid-ABI guard, while Kani proves the Rust binding's C-ABI
+discriminants and FFI NUL precondition. See
+[`docs/FORMAL_METHODS.md`](docs/FORMAL_METHODS.md).
+
 ## Design
 
 - **Iterative, never recursive.** Merging is a DFS over an explicit heap stack,

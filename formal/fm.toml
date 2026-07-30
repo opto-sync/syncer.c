@@ -1,0 +1,47 @@
+schema_version = 1
+id = "opto-sync-merge-proof-procedure"
+repository = "opto-sync/syncer.c"
+issue = "DEN-573"
+model = "formal/procedure_model.py"
+runner = "python3"
+adapter_protocol = "json-stdin/v1"
+command = ["python3", "formal/procedure_model.py"]
+replay_command = ["python3", "formal/procedure_model.py", "--json-stdin"]
+claim = "bounded-specification-plus-production-code-proofs"
+timeout_seconds = 60
+
+[limits]
+timestamp_values = 1000
+encoded_samples = 111
+strategy_candidates = 21
+
+[[invariants]]
+id = "timestamp-total-order"
+description = "Bounded decimal timestamp encodings form a total preorder by numeric value."
+
+[[invariants]]
+id = "timestamp-antisymmetry"
+description = "Reversing timestamp operands reverses the comparison sign."
+
+[[invariants]]
+id = "timestamp-transitivity"
+description = "The bounded comparison relation is transitive."
+
+[[invariants]]
+id = "leading-zero-equivalence"
+description = "Leading-zero encodings compare equal to their canonical decimal value."
+
+[[invariants]]
+id = "ffi-strategy-closed-world"
+description = "Exactly the five production array-strategy discriminants are accepted."
+
+[production_proofs]
+cbmc = "core/formal/cbmc_timestamp_harness.c"
+kani = "bindings/rust"
+script = "scripts/formal-check.sh"
+workflow = ".github/workflows/formal-methods.yml"
+
+[refinement]
+status = "required"
+production_paths = ["core/src/syncer.c", "bindings/rust/src/lib.rs"]
+notes = "The Python model is a fast algebra/procedure gate. CBMC and Kani remain the code-level proof boundary."
