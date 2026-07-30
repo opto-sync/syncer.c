@@ -93,7 +93,11 @@ node compare.js --corpus corpus.jsonl \
 
 echo
 echo "== [4/4] pass 2: idempotency (re-merge own output with same incoming) =="
-for lang in c ts dart rust go; do
+LANGS="c ts dart rust go"
+if [ -n "$RUST_NATIVE" ]; then
+  LANGS="$LANGS rustnative"
+fi
+for lang in $LANGS; do
   node build_pass2.js corpus.jsonl "results-$lang.jsonl" "corpus2-$lang.jsonl"
 done
 ./run_c                          corpus2-c.jsonl    results2-c.jsonl
@@ -101,16 +105,20 @@ node run_ts.js                   corpus2-ts.jsonl   results2-ts.jsonl
 dart run run_dart.dart           corpus2-dart.jsonl results2-dart.jsonl
 ./rust-runner/target/release/run_rust corpus2-rust.jsonl results2-rust.jsonl
 ./go-runner/run_go               corpus2-go.jsonl   results2-go.jsonl
+if [ -n "$RUST_NATIVE" ]; then
+  "$RUST_NATIVE"                 corpus2-rustnative.jsonl results2-rustnative.jsonl
+fi
 
 # (a) per-language idempotency: results2-<lang> must equal results-<lang>
-for lang in c ts dart rust go; do
+for lang in $LANGS; do
   node compare.js --corpus "corpus2-$lang.jsonl" \
     "pass1-$lang=results-$lang.jsonl" "pass2-$lang=results2-$lang.jsonl"
 done
 # (b) cross-language agreement on pass 2 as well
 node compare.js --corpus corpus2-c.jsonl \
   c=results2-c.jsonl ts=results2-ts.jsonl dart=results2-dart.jsonl \
-  rust=results2-rust.jsonl go=results2-go.jsonl
+  rust=results2-rust.jsonl go=results2-go.jsonl \
+  ${RUST_NATIVE:+rustnative=results2-rustnative.jsonl}
 
 echo
 echo "ALL PASSES OK"
