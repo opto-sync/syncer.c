@@ -532,7 +532,6 @@ opts := syncer.Options{
     ArrayMatchKeys:     "id",
     ResolveByTimestamp: true,
     LwwKeys:            "updatedAt,syncedAt",
-    FwwKeys:            "createdAt",
 }
 
 merged, err := syncer.MergeJSONWithOptions(stored, incoming, opts)
