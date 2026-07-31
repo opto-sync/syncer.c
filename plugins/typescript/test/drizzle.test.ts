@@ -12,9 +12,11 @@ import { Pool } from 'pg';
 import { syncedJsonb, performZeroDeserializationMerge } from '../drizzle';
 import {
   POLICY,
+  FWW_POLICY,
   BASE_DOC,
   INCOMING_RAW,
   EXPECTED_MERGED,
+  EXPECTED_MERGED_FWW,
   EXPECTED_MERGED_WITH_OVERRIDE,
   PassthroughStrategy,
   OverrideStrategy,
