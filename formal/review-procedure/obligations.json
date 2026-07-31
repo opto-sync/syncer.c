@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "repository": "opto-sync/syncer.c",
+  "procedure": "docs/FORMAL_REVIEW_PROCEDURE.md",
+  "obligations": [
+    {
+      "id": "SYNC_ORDER",
+      "kind": "safety",
+      "statement": "Timestamp comparison preserves numeric ordering, equality, and antisymmetry over the reviewed CBMC bound.",
+      "trigger_paths": [
+        "core/src/**",
+        "core/formal/**"
+      ],
+      "model": null,
+      "evidence": [
+        "CBMC production-harness proof",
+        "property and fuzz tests"
+      ],
+      "commands": [
+        "nix develop --command bash scripts/formal-check.sh all"
+      ],
+      "assumptions": [
+        "the bounded harness complements rather than proves arbitrary JSON"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SYNC_ABI",
+      "kind": "safety",
+      "statement": "Every invalid array-strategy C ABI discriminant is rejected before JSON parsing or strategy dispatch.",
+      "trigger_paths": [
+        "core/include/**",
+        "core/src/**",
+        "core/formal/**"
+      ],
+      "model": null,
+      "evidence": [
+        "CBMC invalid-discriminant proof",
+        "native ABI tests"
+      ],
+      "commands": [
+        "nix develop --command bash scripts/formal-check.sh all"
+      ],
+      "assumptions": [
+        "compiler and CBMC model the selected C dialect consistently"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SYNC_FFI",
+      "kind": "safety",
+      "statement": "Rust strategy discriminants match the C ABI and the interior-NUL precondition is exact.",
+      "trigger_paths": [
+        "bindings/rust/**",
+        "core/include/**"
+      ],
+      "model": null,
+      "evidence": [
+        "Kani proofs",
+        "native FFI ownership tests"
+      ],
+      "commands": [
+        "cargo kani --manifest-path bindings/rust/Cargo.toml"
+      ],
+      "assumptions": [
+        "Kani and the Rust compiler use compatible target assumptions"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SYNC_CONVERGE",
+      "kind": "refinement",
+      "statement": "All supported runtime bindings produce byte-identical output for every in-contract differential corpus case.",
+      "trigger_paths": [
+        "bindings/**",
+        "test-differential/**",
+        "core/src/**"
+      ],
+      "model": null,
+      "evidence": [
+        "cross-language differential suite",
+        "per-binding tests"
+      ],
+      "commands": [
+        "bash test-differential/run.sh"
+      ],
+      "assumptions": [
+        "the checked corpus is representative but finite"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SYNC_IDEMPOTENT",
+      "kind": "refinement",
+      "statement": "Every strategy documented as idempotent returns the same result when its output is merged again.",
+      "trigger_paths": [
+        "core/src/**",
+        "core/test/**",
+        "bindings/**"
+      ],
+      "model": null,
+      "evidence": [
+        "randomized property tests",
+        "per-language idempotency passes"
+      ],
+      "commands": [
+        "make -C core test"
+      ],
+      "assumptions": [
+        "only strategies explicitly documented as idempotent are covered"
+      ],
+      "bounded": true
+    }
+  ]
+}
