@@ -27,14 +27,29 @@ import (
 const defaultDSN = "host=127.0.0.1 port=55987 user=test password=test dbname=plugintest sslmode=disable"
 
 // canonicalOptions is the merge policy used across every opto-sync binding.
+//
+// There is deliberately NO FwwKeys. FWW in the C core is a node-level VETO, not
+// field protection: an incoming node whose FWW key is NEWER is discarded
+// WHOLESALE, however new its updatedAt is. With createdAt as a default FWW key,
+// any replica that ends up holding a later createdAt for a record could never
+// write that record again — silently, behind a 200 OK. See
+// docs/MERGE_SEMANTICS.md. FWW remains fully supported as an explicit opt-in;
+// see fwwOptions below.
 func canonicalOptions() syncer.Options {
 	return syncer.Options{
 		ArrayStrategy:      syncer.ArrayMergeByKey,
 		ArrayMatchKeys:     "id",
 		ResolveByTimestamp: true,
 		LwwKeys:            "updatedAt,syncedAt",
-		FwwKeys:            "createdAt",
 	}
+}
+
+// fwwOptions is canonicalOptions with FWW explicitly opted into, used by the
+// tests that assert FWW *behaviour*.
+func fwwOptions() syncer.Options {
+	opts := canonicalOptions()
+	opts.FwwKeys = "createdAt"
+	return opts
 }
 
 // Doc has a jsonb column held as a raw JSON string, which is the
@@ -78,6 +93,25 @@ const incomingDoc = `{
 }`
 
 const expectedMerged = `{
+  "profile": {
+    "name": "Ada",
+    "theme": {"mode": "dark", "accent": "red"},
+    "contact": {"email": "ada@example.com"},
+    "locale": "en-GB"
+  },
+  "items": [
+    {"id": "a", "qty": 1, "note": "base-a", "updatedAt": "2026-06-01T00:00:00Z"},
+    {"id": "b", "qty": 42, "note": "fresh-b", "updatedAt": "2026-07-01T00:00:00Z"},
+    {"id": "c", "qty": 7, "note": "new-c", "updatedAt": "2026-07-01T00:00:00Z"}
+  ],
+  "audit": {"createdAt": "2030-01-01T00:00:00Z", "actor": "impostor"},
+  "tags": ["red", "green", "blue"]
+}`
+
+// expectedMergedFWW is the same merge under fwwOptions: identical except that
+// the audit subtree is vetoed WHOLESALE — both keys, not just createdAt — which
+// is exactly why FWW is not a default.
+const expectedMergedFWW = `{
   "profile": {
     "name": "Ada",
     "theme": {"mode": "dark", "accent": "red"},
@@ -313,10 +347,10 @@ func TestKeyedArrayReconciliation(t *testing.T) {
 	}
 }
 
-// TestFirstWriteWinsRejectsRecreation: a newer createdAt must not overwrite the
-// original subtree.
+// TestFirstWriteWinsRejectsRecreation: with FWW explicitly opted into, a newer
+// createdAt must not overwrite the original subtree.
 func TestFirstWriteWinsRejectsRecreation(t *testing.T) {
-	db := openDB(t, canonicalOptions())
+	db := openDB(t, fwwOptions())
 	resetTable(t, db)
 	seed(t, db, "fww", baseDoc)
 
@@ -325,12 +359,50 @@ func TestFirstWriteWinsRejectsRecreation(t *testing.T) {
 		t.Fatalf("Updates: %v", err)
 	}
 
-	audit := readPersisted(t, db, "fww")["audit"].(map[string]interface{})
+	got := readPersisted(t, db, "fww")
+	assertJSONEqual(t, got, parseJSON(t, expectedMergedFWW),
+		"explicit FWW vetoes the audit subtree wholesale")
+
+	audit := got["audit"].(map[string]interface{})
 	if audit["createdAt"] != "2026-01-01T00:00:00Z" {
 		t.Errorf("audit.createdAt = %v, want the ORIGINAL — FWW must reject a re-creation", audit["createdAt"])
 	}
 	if audit["actor"] != "original-owner" {
 		t.Errorf("audit.actor = %v, want original-owner — FWW rejects the whole subtree", audit["actor"])
+	}
+}
+
+// TestDefaultPolicyDoesNotVetoOnCreatedAt is the regression test for removing
+// createdAt from the default policy. FWW is a NODE-LEVEL veto: the incoming node
+// below is the newest write in the system by updatedAt, by an enormous margin,
+// and FWW still drops it wholesale. A replica holding a later createdAt would
+// therefore be permanently, silently unable to write the record — behind a 200.
+func TestDefaultPolicyDoesNotVetoOnCreatedAt(t *testing.T) {
+	if canonicalOptions().FwwKeys != "" {
+		t.Fatalf("the canonical policy must declare no FwwKeys, got %q", canonicalOptions().FwwKeys)
+	}
+
+	const base = `{"createdAt":100,"updatedAt":100,"v":"base"}`
+	const incoming = `{"createdAt":200,"updatedAt":999999,"v":"NEWEST"}`
+
+	underDefault, err := syncer.MergeJSONWithOptions(base, incoming, canonicalOptions())
+	if err != nil {
+		t.Fatalf("merge under the default policy: %v", err)
+	}
+	if got := parseJSON(t, underDefault)["v"]; got != "NEWEST" {
+		t.Errorf("v = %v, want NEWEST — the default policy must let the newest write land", got)
+	}
+
+	underFWW, err := syncer.MergeJSONWithOptions(base, incoming, fwwOptions())
+	if err != nil {
+		t.Fatalf("merge under explicit FWW: %v", err)
+	}
+	fww := parseJSON(t, underFWW)
+	if fww["v"] != "base" {
+		t.Errorf("v = %v, want base — explicit FWW must still veto the whole node", fww["v"])
+	}
+	if fww["updatedAt"].(float64) != 100 {
+		t.Errorf("updatedAt = %v, want 100 — the newest updatedAt is discarded WITH the node", fww["updatedAt"])
 	}
 }
 

@@ -154,4 +154,39 @@ mod tests {
             Err(ReconcileError::InvalidJson)
         );
     }
+
+    #[test]
+    fn default_does_not_let_created_at_veto_a_newer_write() {
+        // FWW is a NODE-LEVEL veto, not field protection: an incoming node whose
+        // FWW key is newer is discarded WHOLESALE, however new its updatedAt is.
+        // With createdAt defaulted on, a replica holding a later createdAt could
+        // never write the record again — silently, behind a 200 OK.
+        assert!(
+            ReconcileOptions::default().fww_keys.is_empty(),
+            "the default policy must declare no fww_keys"
+        );
+
+        let current = json!({"createdAt": 100, "updatedAt": 100, "v": "base"});
+        let incoming = json!({"createdAt": 200, "updatedAt": 999999, "v": "NEWEST"});
+        let merged =
+            reconcile_values(&current, &incoming, &ReconcileOptions::default()).unwrap();
+        assert_eq!(merged["v"], "NEWEST", "the newest write must land by default");
+        assert_eq!(merged["updatedAt"], 999999);
+    }
+
+    #[test]
+    fn first_write_wins_remains_an_explicit_opt_in() {
+        let current = json!({"createdAt": 100, "updatedAt": 100, "v": "base"});
+        let incoming = json!({"createdAt": 200, "updatedAt": 999999, "v": "NEWEST"});
+        let options = ReconcileOptions {
+            fww_keys: "createdAt".to_string(),
+            ..ReconcileOptions::default()
+        };
+        let merged = reconcile_values(&current, &incoming, &options).unwrap();
+        assert_eq!(merged["v"], "base", "explicit FWW still vetoes the whole node");
+        assert_eq!(
+            merged["updatedAt"], 100,
+            "the newest updatedAt is discarded WITH the node"
+        );
+    }
 }
