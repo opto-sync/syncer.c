@@ -171,7 +171,6 @@ mergeJson(
     arrayMatchKeys: 'id',
     resolveByTimestamp: true,
     lwwKeys: 'updatedAt,syncedAt',
-    fwwKeys: 'createdAt',
   },
 );
 // '{"items":[{"id":"a","updatedAt":9000,"qty":42},{"id":"b","createdAt":3000}]}'
