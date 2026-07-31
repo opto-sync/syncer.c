@@ -15,9 +15,11 @@ import { DataSource, EntitySchema } from 'typeorm';
 import { typeOrmSyncMerge, SyncerJsonbTransformer, SyncerRowNotFoundError } from '../typeorm';
 import {
   POLICY,
+  FWW_POLICY,
   BASE_DOC,
   INCOMING_RAW,
   EXPECTED_MERGED,
+  EXPECTED_MERGED_FWW,
   EXPECTED_MERGED_WITH_OVERRIDE,
   PassthroughStrategy,
   OverrideStrategy,
