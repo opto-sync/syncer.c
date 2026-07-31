@@ -104,6 +104,25 @@ const expectedMerged = `{
     {"id": "b", "qty": 42, "note": "fresh-b", "updatedAt": "2026-07-01T00:00:00Z"},
     {"id": "c", "qty": 7, "note": "new-c", "updatedAt": "2026-07-01T00:00:00Z"}
   ],
+  "audit": {"createdAt": "2030-01-01T00:00:00Z", "actor": "impostor"},
+  "tags": ["red", "green", "blue"]
+}`
+
+// expectedMergedFWW is the same merge under fwwOptions: identical except that
+// the audit subtree is vetoed WHOLESALE — both keys, not just createdAt — which
+// is exactly why FWW is not a default.
+const expectedMergedFWW = `{
+  "profile": {
+    "name": "Ada",
+    "theme": {"mode": "dark", "accent": "red"},
+    "contact": {"email": "ada@example.com"},
+    "locale": "en-GB"
+  },
+  "items": [
+    {"id": "a", "qty": 1, "note": "base-a", "updatedAt": "2026-06-01T00:00:00Z"},
+    {"id": "b", "qty": 42, "note": "fresh-b", "updatedAt": "2026-07-01T00:00:00Z"},
+    {"id": "c", "qty": 7, "note": "new-c", "updatedAt": "2026-07-01T00:00:00Z"}
+  ],
   "audit": {"createdAt": "2026-01-01T00:00:00Z", "actor": "original-owner"},
   "tags": ["red", "green", "blue"]
 }`
