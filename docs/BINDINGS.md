@@ -350,7 +350,6 @@ final merged = syncer.tryMerge(
     arrayMatchKeys: 'id',
     resolveByTimestamp: true,
     lwwKeys: 'updatedAt,syncedAt',
-    fwwKeys: 'createdAt',
   ),
 );
 if (merged == null) { /* invalid JSON */ }
