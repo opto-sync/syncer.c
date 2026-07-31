@@ -27,14 +27,29 @@ import (
 const defaultDSN = "host=127.0.0.1 port=55987 user=test password=test dbname=plugintest sslmode=disable"
 
 // canonicalOptions is the merge policy used across every opto-sync binding.
+//
+// There is deliberately NO FwwKeys. FWW in the C core is a node-level VETO, not
+// field protection: an incoming node whose FWW key is NEWER is discarded
+// WHOLESALE, however new its updatedAt is. With createdAt as a default FWW key,
+// any replica that ends up holding a later createdAt for a record could never
+// write that record again — silently, behind a 200 OK. See
+// docs/MERGE_SEMANTICS.md. FWW remains fully supported as an explicit opt-in;
+// see fwwOptions below.
 func canonicalOptions() syncer.Options {
 	return syncer.Options{
 		ArrayStrategy:      syncer.ArrayMergeByKey,
 		ArrayMatchKeys:     "id",
 		ResolveByTimestamp: true,
 		LwwKeys:            "updatedAt,syncedAt",
-		FwwKeys:            "createdAt",
 	}
+}
+
+// fwwOptions is canonicalOptions with FWW explicitly opted into, used by the
+// tests that assert FWW *behaviour*.
+func fwwOptions() syncer.Options {
+	opts := canonicalOptions()
+	opts.FwwKeys = "createdAt"
+	return opts
 }
 
 // Doc has a jsonb column held as a raw JSON string, which is the
