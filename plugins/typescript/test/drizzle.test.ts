@@ -141,8 +141,50 @@ export async function register() {
     equal(persisted.items.length, 3, 'array has exactly 3 elements (no duplicate a/b)');
     equal(persisted.items[2].id, 'c', 'new element appended at the END');
 
-    equal(persisted.audit.createdAt, '2026-01-01T00:00:00Z', 'FWW rejected the newer createdAt');
-    equal(persisted.audit.actor, 'original-owner', 'FWW rejected the whole re-created subtree');
+    equal(persisted.audit.createdAt, '2030-01-01T00:00:00Z', 'no default FWW: audit deep-merges');
+    equal(persisted.audit.actor, 'impostor', 'no default FWW: the incoming actor lands');
+  });
+
+  test('createdAt FWW rejects a re-creation when opted into explicitly (persisted)', async () => {
+    await resetTable(TABLE);
+    await seed(TABLE, 'fww', BASE_DOC);
+    const rows = await db
+      .select({ raw: sql<string>`${docs.doc}::text` })
+      .from(docs)
+      .where(eq(docs.id, 'fww'));
+    const merged = performZeroDeserializationMerge<Doc>(
+      rows[0].raw,
+      INCOMING_RAW,
+      new PassthroughStrategy(),
+      FWW_POLICY,
+    );
+    await db.update(docs).set({ doc: merged }).where(eq(docs.id, 'fww'));
+
+    const persisted = await readPersisted(TABLE, 'id', 'fww', 'doc');
+    deepEqual(persisted, EXPECTED_MERGED_FWW, 'explicit FWW vetoes the audit subtree wholesale');
+    equal(persisted.audit.createdAt, '2026-01-01T00:00:00Z', 'original createdAt retained');
+    equal(persisted.audit.actor, 'original-owner', 'impostor rejected WITH the whole subtree');
+  });
+
+  test('REGRESSION: a default createdAt FWW key would veto the newest write', async () => {
+    // FWW is a NODE-LEVEL veto, not field protection: the incoming node below is
+    // the newest write in the system by updatedAt, by an enormous margin, and
+    // FWW still drops it wholesale. A replica holding a later createdAt would
+    // therefore be permanently, silently unable to write the record — which is
+    // why createdAt is not in any default policy.
+    const base = JSON.stringify({ createdAt: 100, updatedAt: 100, v: 'base' });
+    const incoming = JSON.stringify({ createdAt: 200, updatedAt: 999999, v: 'NEWEST' });
+
+    const underDefault = performZeroDeserializationMerge<any>(
+      base, incoming, new PassthroughStrategy(), POLICY,
+    );
+    equal(underDefault.v, 'NEWEST', 'default policy lets the newest write land');
+
+    const underFww = performZeroDeserializationMerge<any>(
+      base, incoming, new PassthroughStrategy(), FWW_POLICY,
+    );
+    equal(underFww.v, 'base', 'explicit FWW vetoes the node despite the newer updatedAt');
+    equal(underFww.updatedAt, 100, 'the newest updatedAt is discarded with the node');
   });
 
   test('repeated apply is semantically idempotent (parsed compare, not raw text)', async () => {
