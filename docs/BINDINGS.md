@@ -450,7 +450,6 @@ let opts = MergeOptions {
     array_match_keys: Some("id".into()),
     resolve_by_timestamp: true,
     lww_keys: Some("updatedAt,syncedAt".into()),
-    fww_keys: Some("createdAt".into()),
     ..MergeOptions::default()
 };
 
