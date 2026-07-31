@@ -100,7 +100,8 @@ export const BASE_DOC = {
  *  2. items[id=a] is STALE (older updatedAt)  -> must be REJECTED
  *     items[id=b] is FRESH (newer updatedAt)  -> must be APPLIED
  *     items[id=c] is NEW                      -> must be APPENDED
- *  3. audit.createdAt is NEWER (re-creation)  -> FWW must REJECT the subtree
+ *  3. audit.createdAt is NEWER (re-creation)  -> merged under POLICY,
+ *     REJECTED wholesale only under FWW_POLICY
  *  4. tags / embedding                        -> only a custom strategy changes them
  */
 export const INCOMING_DOC = {
