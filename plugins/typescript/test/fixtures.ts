@@ -9,14 +9,29 @@ import { ArrayStrategy } from '../../../bindings/typescript';
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
 
 /**
- * Integration-test policy. It intentionally opts into `createdAt` FWW so every
- * ORM exercises that optional core branch; production defaults omit FWW.
+ * The canonical merge policy — identical to the default used by every
+ * opto-sync client and server.
+ *
+ * There is deliberately NO `fwwKeys`. FWW in the C core is a node-level VETO,
+ * not field protection: an incoming node whose FWW key is NEWER is discarded
+ * WHOLESALE, however new its `updatedAt` is. With `createdAt` as a default FWW
+ * key, any replica that ends up holding a later `createdAt` for a record could
+ * never write that record again — silently, behind a 200 OK. See
+ * docs/MERGE_SEMANTICS.md.
  */
 export const POLICY = {
   arrayStrategy: ArrayStrategy.MERGE_BY_KEY, // 4
   arrayMatchKeys: 'id',
   resolveByTimestamp: true,
   lwwKeys: 'updatedAt,syncedAt',
+} as const;
+
+/**
+ * The same policy with FWW explicitly opted into, used by the tests that assert
+ * FWW *behaviour*. FWW remains fully supported — it is just not a default.
+ */
+export const FWW_POLICY = {
+  ...POLICY,
   fwwKeys: 'createdAt',
 } as const;
 
