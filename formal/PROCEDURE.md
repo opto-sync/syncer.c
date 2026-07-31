@@ -7,7 +7,7 @@ specification gate, and property/fuzz/differential suites explore the wider
 reconciliation surface. This procedure governs how those claims evolve when
 merge semantics, the C ABI, or a binding changes.
 
-Two machine-readable files serve different purposes and must remain
+Three machine-readable files serve different purposes and must remain
 consistent:
 
 - [`fm.toml`](fm.toml) — the executable procedure profile consumed by the
@@ -18,6 +18,11 @@ consistent:
   production semantics, risk, bounds, faults, review triggers, and
   complementary evidence. Existing proof details remain in
   [`docs/FORMAL_METHODS.md`](../docs/FORMAL_METHODS.md).
+- [`review-procedure/obligations.json`](review-procedure/obligations.json) —
+  the review-obligation register (SYNC_ORDER, SYNC_ABI, SYNC_FFI,
+  SYNC_CONVERGE, SYNC_IDEMPOTENT) mapping changed paths to the evidence a
+  pull request must record; see
+  [`docs/FORMAL_REVIEW_PROCEDURE.md`](../docs/FORMAL_REVIEW_PROCEDURE.md).
 
 ## Claim boundary
 
