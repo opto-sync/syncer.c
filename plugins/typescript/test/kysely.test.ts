@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import { kyselySyncJsonb, SyncerRowNotFoundError } from '../kysely';
 import {
   POLICY,
+  FWW_POLICY,
   BASE_DOC,
   INCOMING_RAW,
   EXPECTED_MERGED,
