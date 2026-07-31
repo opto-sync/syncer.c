@@ -9,14 +9,29 @@ import { ArrayStrategy } from '../../../bindings/typescript';
 import { BaseMergeStrategy } from '../../../bindings/typescript/BaseMergeStrategy';
 
 /**
- * Integration-test policy. It intentionally opts into `createdAt` FWW so every
- * ORM exercises that optional core branch; production defaults omit FWW.
+ * The canonical merge policy — identical to the default used by every
+ * opto-sync client and server.
+ *
+ * There is deliberately NO `fwwKeys`. FWW in the C core is a node-level VETO,
+ * not field protection: an incoming node whose FWW key is NEWER is discarded
+ * WHOLESALE, however new its `updatedAt` is. With `createdAt` as a default FWW
+ * key, any replica that ends up holding a later `createdAt` for a record could
+ * never write that record again — silently, behind a 200 OK. See
+ * docs/MERGE_SEMANTICS.md.
  */
 export const POLICY = {
   arrayStrategy: ArrayStrategy.MERGE_BY_KEY, // 4
   arrayMatchKeys: 'id',
   resolveByTimestamp: true,
   lwwKeys: 'updatedAt,syncedAt',
+} as const;
+
+/**
+ * The same policy with FWW explicitly opted into, used by the tests that assert
+ * FWW *behaviour*. FWW remains fully supported — it is just not a default.
+ */
+export const FWW_POLICY = {
+  ...POLICY,
   fwwKeys: 'createdAt',
 } as const;
 
@@ -71,7 +86,8 @@ export const BASE_DOC = {
     { id: 'a', qty: 1, note: 'base-a', updatedAt: '2026-06-01T00:00:00Z' },
     { id: 'b', qty: 2, note: 'base-b', updatedAt: '2026-06-01T00:00:00Z' },
   ],
-  // FWW: a re-creation attempt must not overwrite this subtree
+  // FWW target: under the default policy this subtree is a plain deep merge;
+  // only under FWW_POLICY does a re-creation attempt get vetoed.
   audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
   // custom-strategy targets
   tags: ['red', 'green'],
@@ -84,7 +100,8 @@ export const BASE_DOC = {
  *  2. items[id=a] is STALE (older updatedAt)  -> must be REJECTED
  *     items[id=b] is FRESH (newer updatedAt)  -> must be APPLIED
  *     items[id=c] is NEW                      -> must be APPENDED
- *  3. audit.createdAt is NEWER (re-creation)  -> FWW must REJECT the subtree
+ *  3. audit.createdAt is NEWER (re-creation)  -> merged under POLICY,
+ *     REJECTED wholesale only under FWW_POLICY
  *  4. tags / embedding                        -> only a custom strategy changes them
  */
 export const INCOMING_DOC = {
@@ -118,11 +135,22 @@ export const EXPECTED_MERGED = {
     // id=c APPENDED
     { id: 'c', qty: 7, note: 'new-c', updatedAt: '2026-07-01T00:00:00Z' },
   ],
-  // FWW: incoming createdAt is NEWER, so the whole audit subtree is rejected
-  audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
+  // No FWW in the default policy, and no lww key in this subtree, so `audit`
+  // is a plain deep merge and the incoming values win.
+  audit: { createdAt: '2030-01-01T00:00:00Z', actor: 'impostor' },
   // MERGE_BY_KEY on non-object elements behaves like UNION (dedup + append)
   tags: ['red', 'green', 'blue'],
   embedding: [0, 10, 20, 100],
+};
+
+/**
+ * Expected result of FWW_POLICY-merging INCOMING_DOC onto BASE_DOC. Identical
+ * to EXPECTED_MERGED except that the `audit` subtree is vetoed WHOLESALE — both
+ * keys, not just `createdAt` — which is exactly why FWW is not a default.
+ */
+export const EXPECTED_MERGED_FWW = {
+  ...EXPECTED_MERGED,
+  audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
 };
 
 /** Expected result when OverrideStrategy is in play. */

@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import { kyselySyncJsonb, SyncerRowNotFoundError } from '../kysely';
 import {
   POLICY,
+  FWW_POLICY,
   BASE_DOC,
   INCOMING_RAW,
   EXPECTED_MERGED,
@@ -98,13 +99,25 @@ export async function register() {
     equal(p.items[2].id, 'c', 'NEW element appended at the end');
   });
 
-  test('createdAt FWW rejects a re-creation (persisted)', async () => {
+  test('createdAt FWW rejects a re-creation when opted into explicitly (persisted)', async () => {
     await resetTable(TABLE);
     await seed(TABLE, 'fww', BASE_DOC);
-    await sync('fww');
+    await sync('fww', INCOMING_RAW, new PassthroughStrategy(), FWW_POLICY);
     const p = await readPersisted(TABLE, 'id', 'fww', 'doc');
+    deepEqual(p, EXPECTED_MERGED_FWW, 'explicit FWW vetoes the audit subtree wholesale');
     equal(p.audit.createdAt, '2026-01-01T00:00:00Z', 'original createdAt retained');
     equal(p.audit.actor, 'original-owner', 'impostor actor rejected with the subtree');
+  });
+
+  test('the DEFAULT policy does NOT veto on createdAt (persisted)', async () => {
+    // FWW is a node-level veto, so a default createdAt key would let any replica
+    // holding a later createdAt permanently and silently stop accepting writes.
+    await resetTable(TABLE);
+    await seed(TABLE, 'nofww', BASE_DOC);
+    await sync('nofww');
+    const p = await readPersisted(TABLE, 'id', 'nofww', 'doc');
+    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'no default FWW: audit deep-merges');
+    equal(p.audit.actor, 'impostor', 'no default FWW: the incoming actor lands');
   });
 
   test('repeated apply is semantically idempotent (parsed compare)', async () => {
@@ -152,14 +165,19 @@ export async function register() {
     await kyselySyncJsonb(db, 'kysely_docs', 'id', 'noopt', 'doc', INCOMING_RAW, new PassthroughStrategy());
     const p = await readPersisted(TABLE, 'id', 'noopt', 'doc');
     equal(p.items.find((i: any) => i.id === 'a').qty, 999, 'without the policy the STALE element WINS');
-    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'without the policy FWW does not protect createdAt');
 
     await resetTable(TABLE);
     await seed(TABLE, 'opt', BASE_DOC);
     await sync('opt');
     const q = await readPersisted(TABLE, 'id', 'opt', 'doc');
     equal(q.items.find((i: any) => i.id === 'a').qty, 1, 'with the policy the STALE element is rejected');
-    equal(q.audit.createdAt, '2026-01-01T00:00:00Z', 'with the policy FWW protects createdAt');
+
+    // fwwKeys is forwarded too, but only when explicitly asked for.
+    await resetTable(TABLE);
+    await seed(TABLE, 'optfww', BASE_DOC);
+    await sync('optfww', INCOMING_RAW, new PassthroughStrategy(), FWW_POLICY);
+    const r = await readPersisted(TABLE, 'id', 'optfww', 'doc');
+    equal(r.audit.createdAt, '2026-01-01T00:00:00Z', 'explicit fwwKeys is forwarded and protects the node');
   });
 
   test('arrayMatchKeys is forwarded (identity key other than "id")', async () => {

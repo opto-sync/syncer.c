@@ -6,7 +6,7 @@
  */
 import { mergeJson, version, ArrayStrategy } from '../../../bindings/typescript';
 import { lastPathSegment } from '../../../bindings/typescript/BaseMergeStrategy';
-import { POLICY, PassthroughStrategy, OverrideStrategy } from './fixtures';
+import { POLICY, FWW_POLICY, PassthroughStrategy, OverrideStrategy } from './fixtures';
 import { suite, test, ok, equal, deepEqual } from './harness';
 
 export async function register() {
@@ -42,10 +42,30 @@ export async function register() {
     const recreate = mergeJson(
       JSON.stringify({ createdAt: '2026-01-01', keep: 1 }),
       JSON.stringify({ createdAt: '2030-01-01', add: 2 }),
-      POLICY as any,
+      FWW_POLICY as any,
     )!;
     deepEqual(JSON.parse(recreate), { createdAt: '2026-01-01', keep: 1 },
       'FWW: a newer createdAt rejects the ENTIRE incoming object');
+  });
+
+  test('REGRESSION: createdAt is NOT an FWW key in the default policy', async () => {
+    // Why createdAt was removed from every default policy. FWW is a NODE-LEVEL
+    // VETO: an incoming node whose FWW key is newer is discarded WHOLESALE,
+    // even when its updatedAt is the newest write anywhere in the system. With
+    // createdAt defaulted on, a replica that ends up holding a later createdAt
+    // could never write that record again — silently, behind a 200 OK.
+    equal((POLICY as any).fwwKeys, undefined, 'the default policy declares no fwwKeys');
+
+    const base = JSON.stringify({ createdAt: 100, updatedAt: 100, v: 'base' });
+    const incoming = JSON.stringify({ createdAt: 200, updatedAt: 999999, v: 'NEWEST' });
+
+    const withDefault = JSON.parse(mergeJson(base, incoming, POLICY as any)!);
+    deepEqual(withDefault, { createdAt: 200, updatedAt: 999999, v: 'NEWEST' },
+      'the default policy lets the newest write land');
+
+    const withFww = JSON.parse(mergeJson(base, incoming, FWW_POLICY as any)!);
+    deepEqual(withFww, { createdAt: 100, updatedAt: 100, v: 'base' },
+      'explicit FWW still vetoes the whole node — the behaviour that made it a bad default');
   });
 
   test('override callback IS consulted for scalars/objects at any depth', async () => {

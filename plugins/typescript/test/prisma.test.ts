@@ -132,13 +132,25 @@ export async function register() {
     equal(p.items[2].id, 'c', 'appended at the end');
   });
 
-  test('createdAt FWW rejects a re-creation (persisted)', async () => {
+  test('createdAt FWW rejects a re-creation when opted into explicitly (persisted)', async () => {
     await resetPrismaTable();
     await seedPrisma('fww', BASE_DOC);
-    await sync('fww');
+    await sync('fww', INCOMING_RAW, extend(new PassthroughStrategy(), FWW_POLICY));
     const p = await readPersisted(TABLE, 'id', 'fww', 'doc');
+    deepEqual(p, EXPECTED_MERGED_FWW, 'explicit FWW vetoes the audit subtree wholesale');
     equal(p.audit.createdAt, '2026-01-01T00:00:00Z', 'original createdAt retained');
     equal(p.audit.actor, 'original-owner', 'impostor rejected with the subtree');
+  });
+
+  test('the DEFAULT policy does NOT veto on createdAt (persisted)', async () => {
+    // FWW is a node-level veto, so a default createdAt key would let any replica
+    // holding a later createdAt permanently and silently stop accepting writes.
+    await resetPrismaTable();
+    await seedPrisma('nofww', BASE_DOC);
+    await sync('nofww');
+    const p = await readPersisted(TABLE, 'id', 'nofww', 'doc');
+    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'no default FWW: audit deep-merges');
+    equal(p.audit.actor, 'impostor', 'no default FWW: the incoming actor lands');
   });
 
   test('repeated apply is semantically idempotent (parsed compare)', async () => {
@@ -175,7 +187,13 @@ export async function register() {
     await sync('noopt', INCOMING_RAW, extend(new PassthroughStrategy(), undefined));  // no options at all
     const p = await readPersisted(TABLE, 'id', 'noopt', 'doc');
     equal(p.items.find((i: any) => i.id === 'a').qty, 999, 'without the policy the STALE element WINS');
-    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'without the policy FWW does not protect createdAt');
+
+    // fwwKeys is forwarded too, but only when explicitly asked for.
+    await resetPrismaTable();
+    await seedPrisma('optfww', BASE_DOC);
+    await sync('optfww', INCOMING_RAW, extend(new PassthroughStrategy(), FWW_POLICY));
+    const q = await readPersisted(TABLE, 'id', 'optfww', 'doc');
+    equal(q.audit.createdAt, '2026-01-01T00:00:00Z', 'explicit fwwKeys is forwarded and protects the node');
   });
 
   /* ---- defect regression tests ---- */
