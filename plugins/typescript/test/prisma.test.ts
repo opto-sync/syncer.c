@@ -187,7 +187,13 @@ export async function register() {
     await sync('noopt', INCOMING_RAW, extend(new PassthroughStrategy(), undefined));  // no options at all
     const p = await readPersisted(TABLE, 'id', 'noopt', 'doc');
     equal(p.items.find((i: any) => i.id === 'a').qty, 999, 'without the policy the STALE element WINS');
-    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'without the policy FWW does not protect createdAt');
+
+    // fwwKeys is forwarded too, but only when explicitly asked for.
+    await resetPrismaTable();
+    await seedPrisma('optfww', BASE_DOC);
+    await sync('optfww', INCOMING_RAW, extend(new PassthroughStrategy(), FWW_POLICY));
+    const q = await readPersisted(TABLE, 'id', 'optfww', 'doc');
+    equal(q.audit.createdAt, '2026-01-01T00:00:00Z', 'explicit fwwKeys is forwarded and protects the node');
   });
 
   /* ---- defect regression tests ---- */
