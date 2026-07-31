@@ -135,11 +135,22 @@ export const EXPECTED_MERGED = {
     // id=c APPENDED
     { id: 'c', qty: 7, note: 'new-c', updatedAt: '2026-07-01T00:00:00Z' },
   ],
-  // FWW: incoming createdAt is NEWER, so the whole audit subtree is rejected
-  audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
+  // No FWW in the default policy, and no lww key in this subtree, so `audit`
+  // is a plain deep merge and the incoming values win.
+  audit: { createdAt: '2030-01-01T00:00:00Z', actor: 'impostor' },
   // MERGE_BY_KEY on non-object elements behaves like UNION (dedup + append)
   tags: ['red', 'green', 'blue'],
   embedding: [0, 10, 20, 100],
+};
+
+/**
+ * Expected result of FWW_POLICY-merging INCOMING_DOC onto BASE_DOC. Identical
+ * to EXPECTED_MERGED except that the `audit` subtree is vetoed WHOLESALE — both
+ * keys, not just `createdAt` — which is exactly why FWW is not a default.
+ */
+export const EXPECTED_MERGED_FWW = {
+  ...EXPECTED_MERGED,
+  audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
 };
 
 /** Expected result when OverrideStrategy is in play. */
