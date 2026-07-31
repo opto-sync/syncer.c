@@ -253,7 +253,6 @@ mergeJson(localJson, serverJson, {
   arrayMatchKeys: 'id',
   resolveByTimestamp: true,
   lwwKeys: 'updatedAt,syncedAt',
-  fwwKeys: 'createdAt',
 });
 ```
 
