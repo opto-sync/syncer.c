@@ -86,7 +86,8 @@ export const BASE_DOC = {
     { id: 'a', qty: 1, note: 'base-a', updatedAt: '2026-06-01T00:00:00Z' },
     { id: 'b', qty: 2, note: 'base-b', updatedAt: '2026-06-01T00:00:00Z' },
   ],
-  // FWW: a re-creation attempt must not overwrite this subtree
+  // FWW target: under the default policy this subtree is a plain deep merge;
+  // only under FWW_POLICY does a re-creation attempt get vetoed.
   audit: { createdAt: '2026-01-01T00:00:00Z', actor: 'original-owner' },
   // custom-strategy targets
   tags: ['red', 'green'],
