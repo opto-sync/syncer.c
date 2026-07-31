@@ -206,7 +206,8 @@ quadratic predicts for n=10,000).
 The other tables came from ad-hoc harnesses that are deliberately not committed —
 they have no assertions and would rot as tests. Their parameters: keyed-object
 arrays with 50 % identity overlap, `resolve_by_timestamp` on with
-`lww_keys="updatedAt,syncedAt"` / `fww_keys="createdAt"`; flat objects of *k*
+`lww_keys="updatedAt,syncedAt"` / `fww_keys="createdAt"` (FWW opted in to time
+that branch — it is not a library default; see MERGE_SEMANTICS.md); flat objects of *k*
 keys for the object-count table; single-integer elements for the
 `MERGE_BY_INDEX` table; and for the comparator comparison, the pre-fix
 `array_contains` extracted via `git show 3d7e064c:core/src/syncer.c` linked
