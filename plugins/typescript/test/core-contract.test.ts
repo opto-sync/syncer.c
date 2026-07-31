@@ -6,7 +6,7 @@
  */
 import { mergeJson, version, ArrayStrategy } from '../../../bindings/typescript';
 import { lastPathSegment } from '../../../bindings/typescript/BaseMergeStrategy';
-import { POLICY, PassthroughStrategy, OverrideStrategy } from './fixtures';
+import { POLICY, FWW_POLICY, PassthroughStrategy, OverrideStrategy } from './fixtures';
 import { suite, test, ok, equal, deepEqual } from './harness';
 
 export async function register() {
