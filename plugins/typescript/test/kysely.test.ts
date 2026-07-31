@@ -98,13 +98,25 @@ export async function register() {
     equal(p.items[2].id, 'c', 'NEW element appended at the end');
   });
 
-  test('createdAt FWW rejects a re-creation (persisted)', async () => {
+  test('createdAt FWW rejects a re-creation when opted into explicitly (persisted)', async () => {
     await resetTable(TABLE);
     await seed(TABLE, 'fww', BASE_DOC);
-    await sync('fww');
+    await sync('fww', INCOMING_RAW, new PassthroughStrategy(), FWW_POLICY);
     const p = await readPersisted(TABLE, 'id', 'fww', 'doc');
+    deepEqual(p, EXPECTED_MERGED_FWW, 'explicit FWW vetoes the audit subtree wholesale');
     equal(p.audit.createdAt, '2026-01-01T00:00:00Z', 'original createdAt retained');
     equal(p.audit.actor, 'original-owner', 'impostor actor rejected with the subtree');
+  });
+
+  test('the DEFAULT policy does NOT veto on createdAt (persisted)', async () => {
+    // FWW is a node-level veto, so a default createdAt key would let any replica
+    // holding a later createdAt permanently and silently stop accepting writes.
+    await resetTable(TABLE);
+    await seed(TABLE, 'nofww', BASE_DOC);
+    await sync('nofww');
+    const p = await readPersisted(TABLE, 'id', 'nofww', 'doc');
+    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'no default FWW: audit deep-merges');
+    equal(p.audit.actor, 'impostor', 'no default FWW: the incoming actor lands');
   });
 
   test('repeated apply is semantically idempotent (parsed compare)', async () => {
