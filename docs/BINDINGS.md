@@ -95,6 +95,25 @@ BEAM binding do not** — both collapse `""` to NULL, so under those two binding
 the `updatedAt` default cannot be switched off while `resolve_by_timestamp` is
 enabled. (Gap, stated rather than papered over.)
 
+### `fww_keys` is absent from every example below, deliberately
+
+The per-binding API examples in this document all show the **canonical policy**:
+`MERGE_BY_KEY` on `"id"`, `resolve_by_timestamp = true`,
+`lww_keys = "updatedAt,syncedAt"`, and **no `fww_keys`**. That is exactly the
+default used by the opto-sync clients (TypeScript, Dart, Rust) and by every
+opto-sync server.
+
+`createdAt` is *not* a default FWW key, because FWW is a **node-level veto**
+rather than field protection: an incoming node whose FWW key is newer is
+discarded wholesale, however new its `updatedAt` is. Any replica that ends up
+holding a later `createdAt` for a record could then never write that record
+again — silently, behind a 200 OK. See the callout in
+[`MERGE_SEMANTICS.md`](./MERGE_SEMANTICS.md#comparison-rules).
+
+FWW remains fully supported: set `fww_keys` explicitly when "the first writer
+owns this entire node, forever" is genuinely the semantics you want, and put the
+key on the narrowest node that should be frozen, never at a document root.
+
 ## How merge failure surfaces
 
 The core returns `NULL` when either input is not valid JSON. Failure is
