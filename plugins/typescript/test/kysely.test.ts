@@ -164,14 +164,19 @@ export async function register() {
     await kyselySyncJsonb(db, 'kysely_docs', 'id', 'noopt', 'doc', INCOMING_RAW, new PassthroughStrategy());
     const p = await readPersisted(TABLE, 'id', 'noopt', 'doc');
     equal(p.items.find((i: any) => i.id === 'a').qty, 999, 'without the policy the STALE element WINS');
-    equal(p.audit.createdAt, '2030-01-01T00:00:00Z', 'without the policy FWW does not protect createdAt');
 
     await resetTable(TABLE);
     await seed(TABLE, 'opt', BASE_DOC);
     await sync('opt');
     const q = await readPersisted(TABLE, 'id', 'opt', 'doc');
     equal(q.items.find((i: any) => i.id === 'a').qty, 1, 'with the policy the STALE element is rejected');
-    equal(q.audit.createdAt, '2026-01-01T00:00:00Z', 'with the policy FWW protects createdAt');
+
+    // fwwKeys is forwarded too, but only when explicitly asked for.
+    await resetTable(TABLE);
+    await seed(TABLE, 'optfww', BASE_DOC);
+    await sync('optfww', INCOMING_RAW, new PassthroughStrategy(), FWW_POLICY);
+    const r = await readPersisted(TABLE, 'id', 'optfww', 'doc');
+    equal(r.audit.createdAt, '2026-01-01T00:00:00Z', 'explicit fwwKeys is forwarded and protects the node');
   });
 
   test('arrayMatchKeys is forwarded (identity key other than "id")', async () => {
