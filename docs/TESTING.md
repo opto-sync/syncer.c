@@ -179,7 +179,7 @@ separator = self-merge.
 
 | Harness | Control prefix | Targets |
 |---|---|---|
-| `fuzz_merge.c` | none | the configuration real clients use: `MERGE_BY_KEY` + `resolve_by_timestamp`, `lww="updatedAt,syncedAt"`, `fww="createdAt"`, `match="id"`; merges both directions |
+| `fuzz_merge.c` | none | `MERGE_BY_KEY` + `resolve_by_timestamp`, `lww="updatedAt,syncedAt"`, `fww="createdAt"`, `match="id"`; merges both directions. `fww` is opted in to reach the FWW branch — it is **not** a client default (clients and servers ship no `fww_keys`; see MERGE_SEMANTICS.md) |
 | `fuzz_strategies.c` | 3 bytes | the **options** too: `strategy = b0 % 5`, `max_depth = b1 % 9`, `b2` selects `detect_circular_refs`, `resolve_by_timestamp` and one of four key sets (including spacey and degenerate `,,` lists); also re-merges its own output and the one-sided `NULL` calls |
 | `fuzz_callback.c` | 2 bytes | override-callback paths and the legacy `syncer_merge_json` API; `b0` picks decline / echo v1 / echo v2 / unparseable / `""` / container / alternate. Every branch has a `free()` the engine owns — exactly what LSan can check |
 | `fuzz_idempotent.c` | 1 byte | a **property**, not just memory safety: `merge(merge(a,b),b) == merge(a,b)` for the four strategies that promise it |
