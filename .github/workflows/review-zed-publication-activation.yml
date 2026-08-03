@@ -1,0 +1,77 @@
+name: Review Zed publication activation
+
+on:
+  pull_request:
+    paths:
+      - release/zed-publication-activation.v1.json
+      - scripts/check-zed-publication-activation.py
+      - scripts/test-zed-publication-activation.py
+      - .github/workflows/review-zed-publication-activation.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-zed-publication-activation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Validate activation payload and exact one-file diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the proposed review tree with base history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compile and run the credential-free adversarial validator suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/check-zed-publication-activation.py \
+            scripts/test-zed-publication-activation.py
+          python3 scripts/test-zed-publication-activation.py -v
+
+      - name: Review the real activation payload when present
+        env:
+          EXPECTED_BRANCH: agent/den-1476-publish-syncer-v0.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          activation=release/zed-publication-activation.v1.json
+          if [[ ! -f "$activation" ]]; then
+            echo 'Controller-only change: no activation payload to review.'
+            exit 0
+          fi
+
+          test "$GITHUB_BASE_REF" = main
+          test "$GITHUB_HEAD_REF" = "$EXPECTED_BRANCH"
+          git fetch --no-tags origin "main:refs/remotes/origin/main"
+          base="$(git merge-base HEAD refs/remotes/origin/main)"
+          mapfile -t changed < <(git diff --name-only "$base"...HEAD)
+          if [[ ${#changed[@]} -ne 1 || "${changed[0]}" != "$activation" ]]; then
+            printf 'activation PR changed unexpected files:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+
+          python3 scripts/check-zed-publication-activation.py validate-contract \
+            --approval release/zed-release-approval.v1.json \
+            --activation "$activation"
+
+      - name: Prove the activation review lane is credential-free
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZED_PKG_TOKEN:-}"
+          test -z "${SYNC_FLEET_TOKEN:-}"
+          ! grep -R -nE 'ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+' \
+            release/zed-publication-activation.v1.json \
+            scripts/check-zed-publication-activation.py \
+            scripts/test-zed-publication-activation.py \
+            .github/workflows/review-zed-publication-activation.yml \
+            2>/dev/null
