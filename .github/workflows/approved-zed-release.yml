@@ -1,0 +1,287 @@
+name: Approved Zed release
+
+on:
+  pull_request:
+    paths:
+      - 'release/zed-release-approval.v1.json'
+      - '.github/workflows/approved-zed-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'release/zed-release-approval.v1.json'
+      - '.github/workflows/approved-zed-release.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create or reuse the reviewed tag and publish the approved immutable artifacts
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approved-zed-release-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APPROVAL: release/zed-release-approval.v1.json
+  TARGET_SHA: 8d2b275a89062403666f4bdf196d246a07c84484
+  TARGET_TREE_SHA: 8935c7ce94657a68ad22829f3dcbd299fafddb93
+  RELEASE_TAG: v0.2.1
+  RELEASE_VERSION: 0.2.1
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
+
+jobs:
+  validate:
+    name: Reproduce approved syncer artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout approval controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: controller
+          persist-credentials: false
+
+      - name: Checkout exact approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.TARGET_SHA }}
+          path: package
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout pinned Zed CLI
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+
+      - name: Checkout pinned Zed interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Validate immutable approval contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, re
+
+          approval = json.loads(pathlib.Path('controller/release/zed-release-approval.v1.json').read_text())
+          assert approval['schemaVersion'] == 1
+          assert approval['status'] == 'approved'
+          assert approval['repository'] == os.environ['GITHUB_REPOSITORY']
+          assert approval['targetSha'] == os.environ['TARGET_SHA']
+          assert approval['targetTreeSha'] == os.environ['TARGET_TREE_SHA']
+          assert approval['tag'] == os.environ['RELEASE_TAG']
+          assert approval['version'] == os.environ['RELEASE_VERSION']
+          assert approval['tag'] == f"v{approval['version']}"
+          assert approval['tooling']['zedCliSha'] == os.environ['ZED_CLI_SHA']
+          assert approval['tooling']['zedInterfacesSha'] == os.environ['ZED_INTERFACES_SHA']
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', approval['evidence']['artifactDigest'])
+          assert approval['evidence']['runId'] == 30781413337
+          assert approval['evidence']['artifactId'] == 8843820571
+          packages = approval['zedPackages']
+          assert [item['name'] for item in packages] == ['syncer', 'syncer-c', 'syncer-wasm']
+          assert len({item['archive'] for item in packages}) == 3
+          for item in packages:
+              assert re.fullmatch(r'[0-9a-f]{64}', item['sha256'])
+              assert item['size'] > 0
+              assert pathlib.Path(item['archive']).name == item['archive']
+          PY
+          test "$(git -C package rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C package rev-parse 'HEAD^{tree}')" = "$TARGET_TREE_SHA"
+          test "$(python3 - <<'PY'
+          import tomllib
+          print(tomllib.load(open('package/.zpkg.toml','rb'))['package']['version'])
+          PY
+          )" = "$RELEASE_VERSION"
+
+      - name: Run source release checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 package/scripts/check-release-version.py
+          make -C package/core
+          sh package/scripts/zpkg-smoke.sh package
+
+      - name: Build exact Zed CLI
+        run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+
+      - name: Re-pack and compare every approved artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          out="$RUNNER_TEMP/approved-pack"
+          mkdir -p "$out"
+          (cd package && "$zed" pack --out "$out")
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          approval = json.loads(pathlib.Path('controller/release/zed-release-approval.v1.json').read_text())
+          out = pathlib.Path(__import__('os').environ['RUNNER_TEMP']) / 'approved-pack'
+          actual = {path.name for path in out.glob('*.tar.gz')}
+          expected = {item['archive'] for item in approval['zedPackages']}
+          assert actual == expected, (actual, expected)
+          for item in approval['zedPackages']:
+              path = out / item['archive']
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              assert digest == item['sha256'], (path.name, digest, item['sha256'])
+              assert path.stat().st_size == item['size'], (path.name, path.stat().st_size, item['size'])
+          PY
+          "$zed" publish --dry-run --allow-dirty --skip-vcs-checks --out "$RUNNER_TEMP/dry-run-pack" --registry "${ZED_PKG_REGISTRY:-https://registry.zpkg.tech}" 2>&1 | tee "$RUNNER_TEMP/publish-dry-run.txt" || {
+            # Older CLI revisions do not accept --out on publish. Re-run the
+            # same non-mutating preflight using the supported surface.
+            (cd package && "$zed" publish --dry-run --allow-dirty --skip-vcs-checks) | tee "$RUNNER_TEMP/publish-dry-run.txt"
+          }
+          grep -F 'opto-sync/syncer@0.2.1' "$RUNNER_TEMP/publish-dry-run.txt"
+          grep -F 'opto-sync/syncer-c@0.2.1' "$RUNNER_TEMP/publish-dry-run.txt"
+          grep -F 'opto-sync/syncer-wasm@0.2.1' "$RUNNER_TEMP/publish-dry-run.txt"
+
+      - name: Upload reproduced approval packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: approved-syncer-v0.2.1-packages
+          path: ${{ runner.temp }}/approved-pack/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Create reviewed tag and publish immutable packages
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: zed-production-release
+    permissions:
+      contents: write
+    env:
+      ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+      ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+    steps:
+      - name: Checkout release controller with full history and write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: controller
+          fetch-depth: 0
+
+      - name: Checkout exact approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.TARGET_SHA }}
+          path: package
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout pinned Zed CLI and interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Build exact Zed CLI and prove registry-owner authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_TOKEN" || {
+            echo 'ZED_PKG_TOKEN is required; refusing to create the tag' >&2
+            exit 1
+          }
+          cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          "$zed" org audit opto-sync --limit 1 > "$RUNNER_TEMP/registry-audit.txt"
+          test -s "$RUNNER_TEMP/registry-audit.txt"
+
+      - name: Create or verify the immutable reviewed tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C controller fetch --force --tags origin
+          test "$(git -C controller rev-parse "$TARGET_SHA^{commit}")" = "$TARGET_SHA"
+          test "$(git -C controller rev-parse "$TARGET_SHA^{tree}")" = "$TARGET_TREE_SHA"
+          existing="$(git -C controller rev-parse -q --verify "refs/tags/$RELEASE_TAG^{}" || true)"
+          if [[ -n "$existing" && "$existing" != "$TARGET_SHA" ]]; then
+            echo "$RELEASE_TAG already points at $existing instead of $TARGET_SHA" >&2
+            exit 1
+          fi
+          if [[ -z "$existing" ]]; then
+            git -C controller config user.name 'opto-sync-release-bot'
+            git -C controller config user.email 'release-bot@users.noreply.github.com'
+            git -C controller tag -a "$RELEASE_TAG" "$TARGET_SHA" \
+              -m "Approved Opto-Sync syncer $RELEASE_TAG" \
+              -m "Evidence run 30781413337; canonical SHA-256 b264be9ac8325e231e8bd2c98af5711f0c6c49934fb203178368490fe2f81c2c"
+            git -C controller push origin "refs/tags/$RELEASE_TAG"
+          fi
+          git -C package fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git -C package rev-parse "$RELEASE_TAG^{}")" = "$TARGET_SHA"
+
+      - name: Publish the reviewed tag through Zed
+        working-directory: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/zed-cli/target/release/zed" publish
+
+      - name: Verify every registry package and generated lock against approval evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          mkdir -p release-verification
+          for name in syncer syncer-c syncer-wasm; do
+            destination="$RUNNER_TEMP/verify-$name"
+            rm -rf "$destination"
+            mkdir -p "$destination"
+            installed=false
+            for attempt in 1 2 3 4 5 6; do
+              if (cd "$destination" && "$zed" install "opto-sync/$name@$RELEASE_VERSION" --skip-manifest --install-mode copy); then
+                installed=true
+                break
+              fi
+              sleep 10
+            done
+            test "$installed" = true
+            cp "$destination/.zpkg.lock" "release-verification/$name.zpkg.lock"
+          done
+          python3 - <<'PY'
+          import json, pathlib, tomllib
+          approval = json.loads(pathlib.Path('controller/release/zed-release-approval.v1.json').read_text())
+          expected = {item['name']: item for item in approval['zedPackages']}
+          for name, item in expected.items():
+              lock = tomllib.loads(pathlib.Path(f'release-verification/{name}.zpkg.lock').read_text())
+              package = next(p for p in lock.get('package', []) if p.get('org') == 'opto-sync' and p.get('name') == name)
+              assert package['version'] == approval['version']
+              assert package['sha256'] == item['sha256']
+              assert package['size'] == item['size']
+              assert package['vcs_tag'] == approval['tag']
+              assert package['vcs_commit'] == approval['targetSha']
+          PY
+
+      - name: Upload post-publication frozen locks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-syncer-v0.2.1-locks
+          path: release-verification/*.zpkg.lock
+          if-no-files-found: error
+          retention-days: 90
