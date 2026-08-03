@@ -1,0 +1,414 @@
+name: Approved Zed release activation
+
+on:
+  pull_request:
+    paths:
+      - scripts/check-zed-publication-activation.py
+      - scripts/test-zed-publication-activation.py
+      - .github/workflows/approved-zed-release-activation.yml
+  pull_request_target:
+    types:
+      - closed
+    paths:
+      - release/zed-publication-activation.v1.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approved-zed-release-activation-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: 8d2b275a89062403666f4bdf196d246a07c84484
+  TARGET_TREE_SHA: 8935c7ce94657a68ad22829f3dcbd299fafddb93
+  RELEASE_TAG: v0.2.1
+  RELEASE_VERSION: 0.2.1
+  ACTIVATION_BRANCH: agent/den-1476-publish-syncer-v0.2.1
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_SHA: 415e871b1fb3dd97744c134351408a3224805dfb
+
+jobs:
+  static-contract:
+    name: Adversarial one-file activation tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout controller change
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Compile activation validator and run adversarial tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/check-zed-publication-activation.py \
+            scripts/test-zed-publication-activation.py
+          python3 scripts/test-zed-publication-activation.py -v
+
+  validate-activation:
+    name: Reproduce activation artifacts without secrets
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'agent/den-1476-publish-syncer-v0.2.1' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout only the trusted merged activation commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          path: controller
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read the activation PR changed-file list without exposing response bodies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          number = int(os.environ['PR_NUMBER'])
+          token = os.environ['GITHUB_TOKEN']
+          files = []
+          for page in range(1, 6):
+              resource = f"/repos/{repository}/pulls/{number}/files?per_page=100&page={page}"
+              request = urllib.request.Request(
+                  os.environ['GITHUB_API_URL'] + resource,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'User-Agent': 'opto-sync-release-activation/1',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      batch = json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f"GitHub API returned HTTP {exc.code} for changed files") from None
+              if not isinstance(batch, list):
+                  raise SystemExit('GitHub changed-files response was not an array')
+              files.extend(item.get('filename') for item in batch)
+              if len(batch) < 100:
+                  break
+          else:
+              raise SystemExit('activation PR exceeded five changed-file pages')
+          if not all(isinstance(filename, str) and filename for filename in files):
+              raise SystemExit('activation PR contains an invalid changed-file entry')
+          with open('activation-pr-files.json', 'w', encoding='utf-8') as handle:
+              json.dump(files, handle, indent=2)
+              handle.write('\n')
+          PY
+
+      - name: Validate the committed approval, activation, event, author, branch, and one-file change set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 controller/scripts/check-zed-publication-activation.py validate-event \
+            --approval controller/release/zed-release-approval.v1.json \
+            --activation controller/release/zed-publication-activation.v1.json \
+            --event "$GITHUB_EVENT_PATH" \
+            --files activation-pr-files.json
+
+      - name: Checkout exact untouched approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.TARGET_SHA }}
+          path: package
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact Zed CLI and interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Prove the approved source is exact and untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C package rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C package rev-parse 'HEAD^{tree}')" = "$TARGET_TREE_SHA"
+          test -z "$(git -C package status --porcelain --untracked-files=all)"
+
+      - name: Build the exact Zed CLI
+        run: cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+
+      - name: Reproduce every approved clean-source package before any build
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          out="$RUNNER_TEMP/activation-packages"
+          mkdir -p "$out"
+          (cd package && "$zed" pack --out "$out")
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import tarfile
+
+          approval = json.loads(
+              pathlib.Path('controller/release/zed-release-approval.v1.json').read_text()
+          )
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'activation-packages'
+          actual = {path.name for path in out.glob('*.tar.gz')}
+          expected = {item['archive'] for item in approval['zedPackages']}
+          assert actual == expected, (actual, expected)
+          forbidden = {
+              'pkg/core/test/test_syncer',
+              'pkg/core/test/prop_test',
+              'pkg/core/test/test_syncer_asan',
+              'pkg/core/test/prop_test_asan',
+          }
+          for item in approval['zedPackages']:
+              path = out / item['archive']
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256']
+              assert path.stat().st_size == item['size']
+              with tarfile.open(path, 'r:gz') as handle:
+                  names = {member.name.rstrip('/') for member in handle.getmembers() if member.name}
+              assert len(names) == item['fileCount']
+              assert not (names & forbidden), sorted(names & forbidden)
+          PY
+
+      - name: Complete the non-mutating publication preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          (cd package && "$zed" publish --dry-run --allow-dirty --skip-vcs-checks) \
+            | tee "$RUNNER_TEMP/activation-publish-dry-run.txt"
+          grep -F 'opto-sync/syncer@0.2.1' "$RUNNER_TEMP/activation-publish-dry-run.txt"
+          grep -F 'opto-sync/syncer-c@0.2.1' "$RUNNER_TEMP/activation-publish-dry-run.txt"
+          grep -F 'opto-sync/syncer-wasm@0.2.1' "$RUNNER_TEMP/activation-publish-dry-run.txt"
+
+      - name: Run source safety checks only after package reproduction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 package/scripts/check-release-version.py
+          make -C package/core
+          make -C package/core sanitize
+          sh package/scripts/zpkg-smoke.sh package
+
+      - name: Upload the reproduced pre-publication packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validated-syncer-v0.2.1-activation-packages
+          path: ${{ runner.temp }}/activation-packages/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Create immutable tag, publish, and verify frozen locks
+    if: needs.validate-activation.result == 'success'
+    needs:
+      - validate-activation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: zed-production-release
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+      ZED_PKG_HOME: /tmp/zed-home
+    steps:
+      - name: Checkout only the trusted merged activation commit with tag-push credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          path: controller
+          fetch-depth: 0
+
+      - name: Checkout exact untouched approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.TARGET_SHA }}
+          path: package
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact Zed CLI and interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Revalidate activation and reproduce exact packages in the protected job
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 controller/scripts/check-zed-publication-activation.py validate-contract \
+            --approval controller/release/zed-release-approval.v1.json \
+            --activation controller/release/zed-publication-activation.v1.json
+          test "$(git -C package rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C package rev-parse 'HEAD^{tree}')" = "$TARGET_TREE_SHA"
+          test -z "$(git -C package status --porcelain --untracked-files=all)"
+          cargo build --locked --release --manifest-path zed-cli/Cargo.toml --bin zed
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          out="$RUNNER_TEMP/protected-packages"
+          mkdir -p "$out"
+          (cd package && "$zed" pack --out "$out")
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          approval = json.loads(
+              pathlib.Path('controller/release/zed-release-approval.v1.json').read_text()
+          )
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'protected-packages'
+          for item in approval['zedPackages']:
+              path = out / item['archive']
+              assert path.is_file()
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256']
+              assert path.stat().st_size == item['size']
+          PY
+          (cd package && "$zed" publish --dry-run --allow-dirty --skip-vcs-checks) \
+            > "$RUNNER_TEMP/protected-publish-dry-run.txt"
+          grep -F 'opto-sync/syncer@0.2.1' "$RUNNER_TEMP/protected-publish-dry-run.txt"
+
+      - name: Require registry-owner authority before tag creation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_TOKEN" || {
+            echo 'ZED_PKG_TOKEN is required; refusing to create the tag.' >&2
+            exit 1
+          }
+          "$GITHUB_WORKSPACE/zed-cli/target/release/zed" org audit opto-sync --limit 1 \
+            > "$RUNNER_TEMP/registry-owner-audit.txt"
+          test -s "$RUNNER_TEMP/registry-owner-audit.txt"
+
+      - name: Create or verify the immutable approved tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C controller fetch --force --tags origin
+          test "$(git -C controller rev-parse "$TARGET_SHA^{commit}")" = "$TARGET_SHA"
+          test "$(git -C controller rev-parse "$TARGET_SHA^{tree}")" = "$TARGET_TREE_SHA"
+          existing="$(git -C controller rev-parse -q --verify "refs/tags/$RELEASE_TAG^{}" || true)"
+          if [[ -n "$existing" && "$existing" != "$TARGET_SHA" ]]; then
+            echo "$RELEASE_TAG already points at $existing instead of $TARGET_SHA" >&2
+            exit 1
+          fi
+          if [[ -z "$existing" ]]; then
+            git -C controller config user.name opto-sync-release-bot
+            git -C controller config user.email release-bot@users.noreply.github.com
+            git -C controller tag -a "$RELEASE_TAG" "$TARGET_SHA" \
+              -m "Approved Opto-Sync syncer $RELEASE_TAG" \
+              -m "Clean-source evidence run 30783265479; canonical SHA-256 444d57c04f80a910e418dec02ebaab1032f4e72fcaf43c1ed1c15d08d7aa163b"
+            git -C controller push origin "refs/tags/$RELEASE_TAG"
+          fi
+          git -C package fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git -C package rev-parse "$RELEASE_TAG^{}")" = "$TARGET_SHA"
+
+      - name: Publish the reviewed clean source through Zed
+        working-directory: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+          "$GITHUB_WORKSPACE/zed-cli/target/release/zed" publish
+
+      - name: Install every registry package and verify immutable lock provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          mkdir -p release-verification
+          for name in syncer syncer-c syncer-wasm; do
+            destination="$RUNNER_TEMP/verify-$name"
+            rm -rf "$destination"
+            mkdir -p "$destination"
+            installed=false
+            for attempt in 1 2 3 4 5 6; do
+              if (cd "$destination" && "$zed" install "opto-sync/$name@$RELEASE_VERSION" --skip-manifest --install-mode copy); then
+                installed=true
+                break
+              fi
+              sleep 10
+            done
+            test "$installed" = true
+            cp "$destination/.zpkg.lock" "release-verification/$name.zpkg.lock"
+          done
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+          import tomllib
+
+          approval = json.loads(
+              pathlib.Path('controller/release/zed-release-approval.v1.json').read_text()
+          )
+          expected = {item['name']: item for item in approval['zedPackages']}
+          for name, item in expected.items():
+              lock = tomllib.loads(
+                  pathlib.Path(f'release-verification/{name}.zpkg.lock').read_text()
+              )
+              package = next(
+                  package
+                  for package in lock.get('package', [])
+                  if package.get('org') == 'opto-sync' and package.get('name') == name
+              )
+              assert package['version'] == approval['version']
+              assert package['sha256'] == item['sha256']
+              assert package['size'] == item['size']
+              assert package['vcs_tag'] == approval['tag']
+              assert package['vcs_commit'] == approval['targetSha']
+              assert package['format'] in {'tar.gz', 'zip'}
+              assert package['source']
+              assert re.fullmatch(r'[0-9a-f]{64}', package['sha256'])
+              assert package['sha256'] != '0' * 64
+          PY
+
+      - name: Upload post-publication frozen locks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-syncer-v0.2.1-locks
+          path: release-verification/*.zpkg.lock
+          if-no-files-found: error
+          retention-days: 90
