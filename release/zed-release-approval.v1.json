@@ -1,38 +1,45 @@
 {
   "schemaVersion": 1,
   "status": "approved",
+  "approvalRevision": 2,
+  "controllerMergeSha": "f6f9a742bd5ffc53c7aed9186bf68faefc4a37ed",
+  "cleanEvidenceMergeSha": "5b676acde74520db259b9b6dc6d739ab85667e57",
   "repository": "opto-sync/syncer.c",
   "targetSha": "8d2b275a89062403666f4bdf196d246a07c84484",
   "targetTreeSha": "8935c7ce94657a68ad22829f3dcbd299fafddb93",
   "version": "0.2.1",
   "tag": "v0.2.1",
+  "packagingMethod": "independent_untouched_checkouts_before_build",
   "zedPackages": [
     {
       "name": "syncer",
       "archive": "opto-sync-syncer-0.2.1.tar.gz",
-      "sha256": "b264be9ac8325e231e8bd2c98af5711f0c6c49934fb203178368490fe2f81c2c",
-      "size": 5775114
+      "sha256": "444d57c04f80a910e418dec02ebaab1032f4e72fcaf43c1ed1c15d08d7aa163b",
+      "size": 554540,
+      "fileCount": 217
     },
     {
       "name": "syncer-c",
       "archive": "opto-sync-syncer-c-0.2.1.tar.gz",
       "sha256": "9a65dc901c89e95175b03263efa61cd6d990e42b05bb34a8ec847cab6dcb9b3d",
-      "size": 138264
+      "size": 138264,
+      "fileCount": 9
     },
     {
       "name": "syncer-wasm",
       "archive": "opto-sync-syncer-wasm-0.2.1.tar.gz",
       "sha256": "ae458615cc05635d58cb400a4e187186b7685c73cd81e1fef42bbb9a64226f03",
-      "size": 142226
+      "size": 142226,
+      "fileCount": 15
     }
   ],
   "evidence": {
     "repository": "opto-sync/opto-sync-e2e",
-    "mergeCommit": "1d047de462c1ccb45f1101ca98108728518b77d1",
+    "mergeCommit": "5b676acde74520db259b9b6dc6d739ab85667e57",
     "workflow": "Coordinated deterministic release evidence",
-    "runId": 30781413337,
-    "artifactId": 8843820571,
-    "artifactDigest": "sha256:c61cc2b80638f4f4628027af6037c3ce179f572fa8587c69cde0ce3ad1226d2a"
+    "runId": 30783265479,
+    "artifactId": 8844418512,
+    "artifactDigest": "sha256:71c89a2c0672156839ec7a472ca4d8fad770563f27f6f71fe5ea5b91a1963257"
   },
   "tooling": {
     "zedCliSha": "c636fb8f6b08695c6b4fe94e2481f4d57270b2d7",
