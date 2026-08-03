@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "status": "approved",
+  "approvalRevision": 1,
+  "controllerMergeSha": "f6f9a742bd5ffc53c7aed9186bf68faefc4a37ed",
   "repository": "opto-sync/syncer.c",
   "targetSha": "8d2b275a89062403666f4bdf196d246a07c84484",
   "targetTreeSha": "8935c7ce94657a68ad22829f3dcbd299fafddb93",
