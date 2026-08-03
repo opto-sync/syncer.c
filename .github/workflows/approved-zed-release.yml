@@ -112,12 +112,13 @@ jobs:
           version="$(python3 -c "import tomllib; print(tomllib.load(open('package/.zpkg.toml','rb'))['package']['version'])")"
           test "$version" = "$RELEASE_VERSION"
 
-      - name: Run source release checks
+      - name: Recreate the exact evidence build state
         shell: bash
         run: |
           set -euo pipefail
           python3 package/scripts/check-release-version.py
           make -C package/core
+          make -C package/core sanitize
           sh package/scripts/zpkg-smoke.sh package
 
       - name: Build exact Zed CLI
