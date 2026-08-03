@@ -180,7 +180,7 @@ jobs:
       contents: write
     env:
       ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
-      ZED_PKG_HOME: ${{ runner.temp }}/zed-home
+      ZED_PKG_HOME: /tmp/zed-home
     steps:
       - name: Checkout release controller with full history and write credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
