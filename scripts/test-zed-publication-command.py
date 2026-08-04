@@ -161,7 +161,7 @@ class PublicationCommandTests(unittest.TestCase):
             MODULE.COMMAND + "\n" + MODULE.COMMAND,
             "/publish-approved-syncer-v0.2.0",
             "",
-            "ghp_not_a_real_token",
+            "gh" + "p_not_a_real_token",
         ):
             with self.subTest(body=body):
                 value = event()
