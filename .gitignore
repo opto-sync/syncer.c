@@ -54,3 +54,7 @@ test-differential/pubspec.lock
 
 # Fuzzing campaign logs (libFuzzer writes these into CWD)
 fuzz-*.log
+tmp
+temp
+tmp/worktrees
+temp/worktrees
