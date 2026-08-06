@@ -5,6 +5,8 @@ bindings/gleam/build/
 bindings/typescript/node_modules/
 bindings/sql/postgres/*.o
 bindings/sql/postgres/*.so
+bindings/sql/postgres/*.dylib
+bindings/sql/postgres/*.dll
 bindings/sql/sqlite/opto_sync.so
 bindings/sql/sqlite/opto_sync.dylib
 bindings/sql/sqlite/opto_sync.dll
