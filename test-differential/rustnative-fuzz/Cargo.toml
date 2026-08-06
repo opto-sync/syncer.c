@@ -9,6 +9,9 @@ edition = "2021"
 [dependencies]
 syncer-rs = { path = "../../../syncer.rs" }
 
+[build-dependencies]
+cc = "1"
+
 [[bin]]
 name = "rustnative-fuzz"
 path = "main.rs"
