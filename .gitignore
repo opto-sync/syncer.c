@@ -59,3 +59,7 @@ fuzz-*.log
 
 # Zed deterministic package output
 .zed/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
