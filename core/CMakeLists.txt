@@ -5,6 +5,10 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+# Keep the public C ABI usable when consumers build the shared library with
+# MSVC. Unix toolchains export external symbols by default; Windows does not.
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 # Add include directories
 include_directories(include)
 
@@ -30,4 +34,3 @@ add_executable(test_syncer
 
 target_include_directories(test_syncer PRIVATE include)
 add_test(NAME test_syncer COMMAND test_syncer)
-

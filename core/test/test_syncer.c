@@ -11,6 +11,16 @@
 static int tests_run   = 0;
 static int tests_passed = 0;
 
+/* strdup is POSIX rather than C99. With C extensions disabled, an undeclared
+   call is assumed to return int by older C rules and truncates pointers on
+   64-bit Linux Release builds. Keep the test binary portable and warning-free. */
+static char* duplicate_string(const char* value) {
+    const size_t size = strlen(value) + 1;
+    char* copy = (char*)malloc(size);
+    if (copy != NULL) memcpy(copy, value, size);
+    return copy;
+}
+
 #define TEST(name) do { \
     printf("  TEST: %-50s ", #name); \
     tests_run++; \
@@ -126,7 +136,7 @@ static char* path_capture_cb(const char* json_path, const char* val1, const char
     (void)val1;
     (void)val2;
     if (captured_count < 32) {
-        captured_paths[captured_count++] = strdup(json_path);
+        captured_paths[captured_count++] = duplicate_string(json_path);
     }
     return NULL; /* use default merge */
 }
@@ -241,7 +251,7 @@ static char* legacy_override(const char* key, const char* val1, const char* val2
     (void)val1;
     (void)val2;
     if (strcmp(key, "priority") == 0) {
-        return strdup("999");
+        return duplicate_string("999");
     }
     return NULL;
 }
@@ -952,7 +962,7 @@ static char* array_path_override(const char* json_path, const char* val1, const 
     (void)val2;
     if (strcmp(json_path, "$.tags") == 0) {
         arr_cb_calls++;
-        return strdup("[\"decided-by-host\"]");
+        return duplicate_string("[\"decided-by-host\"]");
     }
     return NULL;
 }
@@ -1009,7 +1019,7 @@ static void test_override_declining_leaves_strategy_intact(void) {
 static char* root_array_override(const char* json_path, const char* v1, const char* v2) {
     (void)v1;
     (void)v2;
-    if (strcmp(json_path, "$") == 0) return strdup("[99]");
+    if (strcmp(json_path, "$") == 0) return duplicate_string("[99]");
     return NULL;
 }
 

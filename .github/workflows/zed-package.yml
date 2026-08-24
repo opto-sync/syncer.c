@@ -156,19 +156,17 @@ jobs:
           ZED_PKG_R2G_ROOT: ${{ runner.temp }}/zed-r2g
         run: ${{ github.workspace }}/zed-cli/target/release/zed r2g --clean
 
-          echo "ZPKG_FIRST=$first" >> "$GITHUB_ENV"
-
       - name: Compile clean consumers from the packed C artifacts
         run: |
           set -euo pipefail
           tested=0
-          for archive in "$ZPKG_FIRST"/*.tar.gz; do
+          for archive in "$ZPKG_ARCHIVE_DIR"/*.tar.gz; do
             case "$(basename "$archive")" in
               *syncer-wasm*) continue ;;
             esac
             extract=$(mktemp -d "$RUNNER_TEMP/zpkg-extract.XXXXXX")
             tar -xzf "$archive" -C "$extract"
-            sh package/scripts/zpkg-smoke.sh "$extract"
+            sh package/scripts/zpkg-smoke.sh "$extract/pkg"
             rm -rf "$extract"
             tested=$((tested + 1))
           done
@@ -177,7 +175,7 @@ jobs:
       - name: Verify the packed WebAssembly distribution
         run: |
           set -euo pipefail
-          wasm_archive=$(find "$ZPKG_FIRST" -maxdepth 1 -type f -name '*syncer-wasm*.tar.gz' -print -quit)
+          wasm_archive=$(find "$ZPKG_ARCHIVE_DIR" -maxdepth 1 -type f -name '*syncer-wasm*.tar.gz' -print -quit)
           test -n "$wasm_archive"
           extract=$(mktemp -d "$RUNNER_TEMP/zpkg-wasm.XXXXXX")
           tar -xzf "$wasm_archive" -C "$extract"
