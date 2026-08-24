@@ -166,7 +166,7 @@ jobs:
             esac
             extract=$(mktemp -d "$RUNNER_TEMP/zpkg-extract.XXXXXX")
             tar -xzf "$archive" -C "$extract"
-            sh package/scripts/zpkg-smoke.sh "$extract"
+            sh package/scripts/zpkg-smoke.sh "$extract/pkg"
             rm -rf "$extract"
             tested=$((tested + 1))
           done
