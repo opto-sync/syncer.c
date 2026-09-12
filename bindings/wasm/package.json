@@ -30,7 +30,10 @@
   "sideEffects": false,
   "scripts": {
     "build": "./build.sh",
-    "test": "node --test test/wasm.test.mjs"
+    "test": "node --test test/wasm.test.mjs",
+    "lint:ores": "if [ -f ../../.ores-lint/lint.sh ]; then sh ../../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores",
+    "prebuild": "npm run lint:ores"
   },
   "keywords": [
     "wasm",
@@ -41,5 +44,13 @@
     "sync",
     "offline-first"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
+  }
 }
