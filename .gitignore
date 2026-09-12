@@ -63,3 +63,7 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
+
+# Sanctioned scratch directories required by shared agent guidance
+tmp/
+temp/
