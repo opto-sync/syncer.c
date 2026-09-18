@@ -42,7 +42,9 @@ jobs:
           - target: sanitize
             make_goal: sanitize
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: cc version
         run: cc --version
@@ -83,10 +85,12 @@ jobs:
           - lang: wasm
             node: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # --- toolchains (only the one this leg needs) ---------------------------
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: matrix.node
         with:
           node-version: '22'
@@ -96,7 +100,7 @@ jobs:
           cache: npm
           cache-dependency-path: bindings/typescript/package-lock.json
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: matrix.go
         with:
           go-version: '1.22'
@@ -106,7 +110,7 @@ jobs:
           # `go test` pass against a stale compiled core.
           cache: false
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         if: matrix.dart
         with:
           sdk: stable
@@ -116,7 +120,7 @@ jobs:
       # never target/, which would risk a stale statically-linked core.
       - name: Cache cargo registry (downloads only, never target/)
         if: matrix.rust
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry/index
@@ -252,14 +256,16 @@ jobs:
             core_shared_lib: true
             dir: plugins/dart/isar
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: matrix.node
         with:
           node-version: '22'
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: matrix.go
         with:
           go-version: '1.22'
@@ -267,14 +273,14 @@ jobs:
           # core C sources through its replace directive on ../../../bindings/go.
           cache: false
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         if: matrix.dart
         with:
           sdk: stable
 
       - name: Cache cargo registry (downloads only, never target/)
         if: matrix.rust
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry/index
@@ -372,7 +378,9 @@ jobs:
       matrix:
         engine: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install SQLite development tools
         if: matrix.engine == 'sqlite'
@@ -444,7 +452,9 @@ jobs:
     container:
       image: elixir:1.17-otp-27
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust (Rustler builds the NIF)
         run: |
@@ -500,24 +510,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.22'
           cache: false   # see the CACHING WARNING above
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: stable
 
       # Registry index/tarballs only. Compiled artifacts are never cached.
       - name: Cache cargo registry (downloads only, never target/)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry/index
@@ -562,7 +574,7 @@ jobs:
 
       - name: Upload differential corpus + results on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: differential-artifacts
           path: |
