@@ -59,11 +59,12 @@ fuzz-*.log
 
 # Zed deterministic package output
 .zed/
-tmp
-temp
 tmp/worktrees
 temp/worktrees
 
 # Sanctioned scratch directories required by shared agent guidance
 tmp/
 temp/
+
+# machine-local symlink to ORESoftware/my-ai AGENTS.md; never committed
+.ores/
